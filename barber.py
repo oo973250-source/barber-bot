@@ -2,12 +2,6 @@
 Barber Shop Telegram Bot — Production Build
 Features: 6-language i18n, admin style upload, Chapa payments, waitlist, 24/7 ready
 """
-
-from telegram import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
-
-button = KeyboardButton("Open WebApp", web_app=WebAppInfo("https://web-production-2a3d5.up.railway.app"))
-markup = ReplyKeyboardMarkup([[button]], resize_keyboard=True)
-update.message.reply_text("Click below:", reply_markup=markup)
 import os
 
 TOKEN = os.getenv("8993843264:AAGajDD6jYqz4_qlyA4lZF1dZMEMElmlxtk")
