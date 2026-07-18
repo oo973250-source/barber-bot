@@ -1,5 +1,5 @@
 """
-Flask server: serves web app, Chapa payments, services API, style uploads
+Flask server: serves web app, Chapa payments, services API, style uploads, language sync
 """
 
 import os
@@ -23,7 +23,7 @@ CHAPA_SECRET = os.getenv("CHAPA_SECRET_KEY", "")
 CHAPA_BASE = "https://api.chapa.co/v1"
 WEB_APP_URL = os.getenv("WEB_APP_URL", "").rstrip("/")
 CHAPA_WEBHOOK = os.getenv("CHAPA_WEBHOOK_URL", "")
-WORKING_HOURS = ["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00"]
+WORKING_HOURS = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"]
 
 
 def db():
@@ -40,6 +40,14 @@ def tx_ref(length=12):
 @app.route("/")
 def index():
     return send_file("index.html")
+
+
+# ────────────────────────────────────────────
+# SERVE STATIC FILES (for background images, css, etc.)
+# ────────────────────────────────────────────
+@app.route("/static/<path:filename>")
+def static_files(filename):
+    return send_from_directory("static", filename)
 
 
 # ────────────────────────────────────────────
@@ -96,14 +104,40 @@ def get_times():
 # ────────────────────────────────────────────
 @app.route("/api/i18n/<lang>")
 def api_i18n(lang):
-    """Return web-app-only strings for a given language.
-    The bot already has translations built-in; this endpoint
-    lets the web app stay in sync without duplicating the
-    full dictionary in JS."""
+    """Return web-app-only strings for a given language."""
     from barber import L
-    web_keys = [k for k in L.get("en",{}) if k.startswith("w_")]
+    web_keys = [k for k in L.get("en", {}) if k.startswith("w_")]
     result = {k: L.get(lang, L["en"]).get(k, L["en"].get(k, k)) for k in web_keys}
     return jsonify(result)
+
+
+# ────────────────────────────────────────────
+# WEB APP LANGUAGE SYNC
+# ────────────────────────────────────────────
+@app.route("/api/user-lang")
+def user_lang_api():
+    chat_id = request.args.get("chat_id")
+    if not chat_id:
+        return jsonify({"lang": "en"})
+    conn = db()
+    row = conn.cursor().execute("SELECT language FROM users WHERE chat_id=?", (chat_id,)).fetchone()
+    conn.close()
+    return jsonify({"lang": row[0] if row else "en"})
+
+
+@app.route("/api/set-lang", methods=["POST"])
+def set_lang_api():
+    data = request.json
+    chat_id = data.get("chat_id")
+    lang = data.get("lang")
+    if not chat_id or not lang:
+        return jsonify({"error": "Missing data"}), 400
+    conn = db()
+    conn.cursor().execute("INSERT OR REPLACE INTO users (chat_id, language) VALUES (?,?)",
+                          (chat_id, lang))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
 
 
 # ────────────────────────────────────────────
@@ -166,7 +200,8 @@ def create_payment():
     # Mark failed
     conn = db()
     conn.cursor().execute("UPDATE appointments SET payment_status='failed',status='cancelled' WHERE chapa_tx_ref=?", (ref,))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     return jsonify({"error": "Chapa failed", "details": chapa}), 400
 
 
@@ -181,10 +216,11 @@ def chapa_webhook():
     if status == "success":
         v = requests.get(f"{CHAPA_BASE}/transaction/verify/{ref}",
                          headers={"Authorization": f"Bearer {CHAPA_SECRET}"})
-        if v.status_code == 200 and v.json().get("data",{}).get("status") == "success":
+        if v.status_code == 200 and v.json().get("data", {}).get("status") == "success":
             conn = db()
             conn.cursor().execute("UPDATE appointments SET payment_status='paid' WHERE chapa_tx_ref=?", (ref,))
-            conn.commit(); conn.close()
+            conn.commit()
+            conn.close()
     return jsonify({"message": "ok"}), 200
 
 
@@ -194,7 +230,8 @@ def chapa_webhook():
 @app.route("/api/check-status")
 def check_status():
     ref = request.args.get("tx_ref")
-    if not ref: return jsonify({"error": "Missing tx_ref"}), 400
+    if not ref:
+        return jsonify({"error": "Missing tx_ref"}), 400
     conn = db()
     row = conn.cursor().execute("SELECT payment_status FROM appointments WHERE chapa_tx_ref=?", (ref,)).fetchone()
     conn.close()
@@ -209,7 +246,13 @@ def fake_payment():
     data = request.json
     ref = tx_ref()
     conn = db()
-    conn.cursor().execute("INSERT INTO appointments (chat_id, client_name, phone, service, price, appointment_date, appointment_time, status, chapa_tx_ref, payment_status) VALUES (?, ?, 'N/A', ?, ?, ?, ?, 'booked', ?, 'paid')", (data.get("chat_id"), "Test User", data.get("service_name"), data.get("service_price", 0), data.get("date"), data.get("time"), ref))
+    conn.cursor().execute(
+        "INSERT INTO appointments (chat_id, client_name, phone, service, price, "
+        "appointment_date, appointment_time, status, chapa_tx_ref, payment_status) "
+        "VALUES (?, ?, 'N/A', ?, ?, ?, ?, 'booked', ?, 'paid')",
+        (data.get("chat_id"), "Test User", data.get("service_name"), data.get("service_price", 0),
+         data.get("date"), data.get("time"), ref)
+    )
     conn.commit()
     conn.close()
     return jsonify({"status": "success", "checkout_url": "fake", "tx_ref": ref})
@@ -229,13 +272,18 @@ def confirm_booking():
 
     conn = db()
     row = conn.cursor().execute(
-        "SELECT payment_status FROM appointments WHERE chapa_tx_ref=?", (ref,)
+        "SELECT payment_status, confirmed, phone FROM appointments WHERE chapa_tx_ref=?", (ref,)
     ).fetchone()
 
     if not row or row[0] != "paid":
         conn.close()
         print(f"[API] confirm-booking FAILED: not paid for {ref}")
         return jsonify({"error": "Not paid"}), 400
+
+    # ✅ Idempotency check: If already confirmed or phone is already set, do NOT send another prompt
+    if row[1] == 1 or (row[2] and row[2] not in ("N/A", "Via WebApp")):
+        conn.close()
+        return jsonify({"status": "already_handled"})
 
     conn.cursor().execute(
         "INSERT OR REPLACE INTO pending_web_data (chat_id,tx_ref,image_url,style_name,style_desc) VALUES (?,?,?,?,?)",
@@ -254,10 +302,16 @@ def confirm_booking():
         "one_time_keyboard": True
     }
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    resp = requests.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown", "reply_markup": kb})
+    resp = requests.post(url, json={
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown",
+        "reply_markup": kb
+    })
     print(f"[API] confirm-booking sent phone prompt to {chat_id}, status={resp.status_code}")
 
     return jsonify({"status": "success"})
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), use_reloader=False)
