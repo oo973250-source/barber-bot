@@ -3,623 +3,688 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Book Barber</title>
+    <title>Barber Shop Booking</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        /* ── Theme tokens from Telegram ── */
         :root {
-            --bg: var(--tg-theme-bg-color, #111111);
-            --bg2: var(--tg-theme-secondary-bg-color, #1c1c1e);
-            --text: var(--tg-theme-text-color, #f5f5f5);
-            --hint: var(--tg-theme-hint-color, #8e8e93);
-            --btn: var(--tg-theme-button-color, #d4a24e);
-            --btn-text: var(--tg-theme-button-text-color, #111111);
-            --danger: #ff453a;
-            --success: #30d158;
-            --glow: rgba(212,162,78,0.35);
-            --radius: 16px;
+            --bg-overlay: rgba(15, 15, 15, 0.85);
+            --card-bg: rgba(30, 30, 30, 0.95);
+            --accent: #FFD700; /* Light Golden/Yellow */
+            --accent-hover: #FFE650;
+            --text-main: #FFFFFF;
+            --text-muted: #B0B0B0;
+            --danger: #FF4D4D;
+            --success: #4CAF50;
+            --border: rgba(255, 215, 0, 0.3);
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
 
         body {
-            background: var(--bg);
-            color: var(--text);
-            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            background-image: url('https://z-cdn-media.chatglm.cn/files/52cd203a-0fad-4b5c-81dc-b29d81a3cd81.png?auth_key=1884408975-024f21b1eada43dda5a78ce819673168-0-8910d87f6fc89573557bbe99501f5eb1');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            background-repeat: no-repeat;
             min-height: 100vh;
-            -webkit-tap-highlight-color: transparent;
+            color: var(--text-main);
         }
 
-        .container {
-            max-width: 460px;
-            margin: 0 auto;
-            padding: 16px;
+        .overlay {
+            background: var(--bg-overlay);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
         }
 
-        /* ── Language bar ── */
-        .lang-bar {
-            display: flex; gap: 6px; justify-content: center;
-            margin-bottom: 16px; flex-wrap: wrap;
+        .header {
+            text-align: center;
+            margin-bottom: 25px;
+            width: 100%;
+            max-width: 500px;
         }
-        .lang-pill {
-            padding: 4px 10px; border-radius: 20px; font-size: 12px;
-            background: var(--bg2); border: 1px solid rgba(255,255,255,0.08);
-            cursor: pointer; transition: all .25s; opacity: .5;
-            font-weight: 600;
-        }
-        .lang-pill.active { opacity: 1; background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
 
-        /* ── Section headers ── */
-        h2 { text-align: center; font-size: 20px; font-weight: 700; margin-bottom: 16px; letter-spacing: -0.3px; }
-        h3 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
-
-        /* ── Style grid ── */
-        .grid {
-            display: grid; grid-template-columns: repeat(3, 1fr);
-            gap: 10px; margin-bottom: 20px;
+        .header h1 {
+            color: var(--accent);
+            font-size: 28px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 5px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.6);
         }
+
+        .header p {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* Steps UI */
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .dot {
+            height: 8px;
+            width: 8px;
+            background-color: #444;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+        .dot.active {
+            background-color: var(--accent);
+            width: 24px;
+            border-radius: 4px;
+        }
+
+        /* Cards & Containers */
         .card {
-            background: var(--bg2); border-radius: var(--radius);
-            overflow: hidden; cursor: pointer; position: relative;
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 20px;
+            width: 100%;
+            max-width: 500px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            border: 1px solid #333;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            color: var(--accent);
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Style List */
+        .style-item {
+            display: flex;
+            align-items: center;
+            background: #222;
             border: 2px solid transparent;
-            transition: transform .25s cubic-bezier(.4,0,.2,1), border-color .25s, box-shadow .25s;
+            border-radius: 12px;
+            padding: 10px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: 0.2s;
         }
-        .card:active { transform: scale(.96); }
-        .card.selected {
-            border-color: var(--btn);
-            box-shadow: 0 0 20px var(--glow), inset 0 0 20px rgba(212,162,78,0.05);
+        .style-item.selected {
+            border-color: var(--accent);
+            background: rgba(255, 215, 0, 0.1);
         }
-        .card img {
-            width: 100%; height: 120px; object-fit: cover; display: block;
-            filter: brightness(.9); transition: filter .3s;
+        .style-item img {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            object-fit: cover;
+            margin-right: 12px;
+            background: #111;
         }
-        .card.selected img { filter: brightness(1.05); }
-        .card .badge {
-            position: absolute; top: 8px; right: 8px;
-            background: rgba(0,0,0,.65); backdrop-filter: blur(8px);
-            padding: 3px 8px; border-radius: 10px; font-size: 11px;
-            font-weight: 700; color: var(--btn);
+        .style-info {
+            flex: 1;
         }
-        .card .label {
-            padding: 8px 6px; font-size: 11px; text-align: center;
-            font-weight: 600; line-height: 1.3;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        .style-name {
+            font-weight: bold;
+            font-size: 16px;
+        }
+        .style-desc {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin: 4px 0;
+        }
+        .style-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+        }
+        .style-price { color: var(--accent); font-weight: bold; }
+        .style-time { color: var(--text-muted); }
+
+        /* Date & Time Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+        .grid-item {
+            background: #222;
+            border: 2px solid transparent;
+            color: #fff;
+            padding: 12px 5px;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            font-size: 14px;
+            transition: 0.2s;
+        }
+        .grid-item.selected {
+            border-color: var(--accent);
+            background: rgba(255, 215, 0, 0.1);
+            color: var(--accent);
+        }
+        .grid-item:disabled {
+            background: #1a1a1a;
+            color: #555;
+            cursor: not-allowed;
+            text-decoration: line-through;
         }
 
-        /* ── Detail panel ── */
-        .detail {
-            background: var(--bg2); border-radius: var(--radius);
-            padding: 16px; margin-bottom: 20px; display: none;
-            border: 1px solid rgba(255,255,255,0.06);
+        input[type="date"] {
+            width: 100%;
+            padding: 12px;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 10px;
+            color: #fff;
+            margin-bottom: 15px;
+            color-scheme: dark; /* Fixes calendar icon in dark mode */
         }
-        .detail .price { color: var(--btn); font-size: 22px; font-weight: 800; }
-        .detail .meta { color: var(--hint); font-size: 13px; margin-top: 4px; }
 
-        /* ── Date / Time ── */
-        .section { margin-bottom: 20px; }
-        .quick-row { display: flex; gap: 10px; margin-bottom: 12px; }
-        .pill {
-            flex: 1; padding: 14px; text-align: center; font-weight: 700;
-            background: var(--bg2); border-radius: 12px; cursor: pointer;
-            border: 1px solid rgba(255,255,255,0.06);
-            transition: all .25s; font-size: 14px;
+        /* Buttons */
+        .btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
-        .pill:active { transform: scale(.96); }
-        .pill.active { background: var(--btn); color: var(--btn-text); border-color: var(--btn); box-shadow: 0 4px 16px var(--glow); }
-
-        .time-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
-        .time-pill {
-            padding: 14px 8px; text-align: center; font-weight: 700;
-            background: var(--bg2); border-radius: 12px; cursor: pointer;
-            border: 1px solid rgba(255,255,255,0.06);
-            transition: all .25s; font-size: 14px;
+        .btn-primary {
+            background: var(--accent);
+            color: #000;
         }
-        .time-pill:active { transform: scale(.96); }
-        .time-pill.active { background: var(--btn); color: var(--btn-text); border-color: var(--btn); box-shadow: 0 4px 16px var(--glow); }
-        .time-pill.disabled { opacity: .3; pointer-events: none; }
-
-        input[type="date"] { display: none; }
-
-        /* ── Pay button ── */
-        .pay-btn {
-            width: 100%; padding: 18px; border: none; border-radius: var(--radius);
-            font-size: 17px; font-weight: 800; cursor: pointer;
-            background: var(--btn); color: var(--btn-text);
-            box-shadow: 0 6px 24px var(--glow);
-            transition: transform .2s, box-shadow .2s;
-            margin-top: 8px;
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-secondary {
+            background: transparent;
+            border: 2px solid #444;
+            color: #fff;
         }
-        .pay-btn:active { transform: scale(.97); }
-        .pay-btn:disabled { background: #555; box-shadow: none; cursor: not-allowed; color: #999; }
-        .pay-btn.test { background: #555; color: var(--text); box-shadow: none; margin-top: 10px; }
-
-        /* ── Verifying screen ── */
-        #verify {
-            display: none; text-align: center; padding-top: 120px;
+        .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+        .btn-danger {
+            background: transparent;
+            border: 1px solid var(--danger);
+            color: var(--danger);
         }
+
+        /* Spinner & Loading */
+        .spinner-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 0;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 215, 0, 0.2);
+            border-top: 4px solid var(--accent);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        /* ── Premium Spinner to Check/X Animation ── */
-        .anim-wrapper {
-            width: 80px; height: 80px; 
-            margin: 0 auto 30px;
-        }
-        .payment-svg { width: 100%; height: 100%; }
-        
-        /* The Spinning Circle */
-        .spinner-path {
-            stroke: var(--btn);
-            stroke-dasharray: 90, 150;
-            stroke-dashoffset: 0;
-            transform-origin: center;
-            animation: rotate 1.4s linear infinite;
-        }
-        
-        /* Hidden Check and X paths */
-        .check-path, .fail-path {
-            stroke-dasharray: 48;
-            stroke-dashoffset: 48;
-            opacity: 0;
-        }
-        .check-path { stroke: var(--success); }
-        .fail-path { stroke: var(--danger); }
+        .loading-text { color: var(--text-muted); font-size: 14px; text-align: center; }
+        .highlight { color: var(--accent); font-weight: bold; }
 
-        @keyframes rotate { 100% { transform: rotate(360deg); } }
-
-        /* SUCCESS STATE: Circle stops, Checkmark draws */
-        #anim-wrapper.success .spinner-path {
-            animation: none;
-            stroke-dashoffset: -35;
-            stroke: var(--success);
-            transition: stroke 0.3s, stroke-dashoffset 0.6s ease-in-out;
+        .summary-box {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border-left: 4px solid var(--accent);
         }
-        #anim-wrapper.success .check-path {
-            opacity: 1;
-            stroke-dashoffset: 0;
-            transition: stroke-dashoffset 0.4s ease-in-out 0.4s;
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 15px;
         }
-        #anim-wrapper.success { animation: pop 0.4s ease 0.8s; }
-
-        /* FAILURE STATE: Circle stops, X draws */
-        #anim-wrapper.failed .spinner-path {
-            animation: none;
-            stroke-dashoffset: -35;
-            stroke: var(--danger);
-            transition: stroke 0.3s, stroke-dashoffset 0.6s ease-in-out;
-        }
-        #anim-wrapper.failed .fail-path {
-            opacity: 1;
-            stroke-dashoffset: 0;
-            transition: stroke-dashoffset 0.4s ease-in-out 0.4s;
-        }
-        #anim-wrapper.failed { animation: shake 0.5s ease 0.8s; }
-
-        @keyframes pop {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.2); filter: drop-shadow(0 0 20px var(--success)); }
-            100% { transform: scale(1); }
-        }
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            20% { transform: translateX(-10px); }
-            40% { transform: translateX(10px); }
-            60% { transform: translateX(-6px); }
-            80% { transform: translateX(6px); }
-        }
-
-        .verify-text { text-align: center; transition: all 0.3s; }
-        .verify-text h2 { font-size: 20px; font-weight: 700; transition: color 0.3s; margin-bottom: 8px; }
-        .verify-text.success h2 { color: var(--success); }
-        .verify-text.failed h2 { color: var(--danger); }
-        .verify-text p { color: var(--hint); font-size: 14px; line-height: 1.5; }
-
-        /* ── Empty state ── */
-        .empty { text-align: center; padding: 60px 20px; color: var(--hint); }
-        .empty .icon { font-size: 48px; margin-bottom: 16px; }
 
         .hidden { display: none !important; }
-
-        /* ── Subtle noise overlay ── */
-        body::before {
-            content: ''; position: fixed; inset: 0; z-index: -1; opacity: .03;
-            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-            background-size: 128px;
-        }
     </style>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-
-<!-- ═══════════ BOOKING SCREEN ═══════════ -->
-<div class="container" id="booking">
-
-    <!-- Language switcher -->
-    <div class="lang-bar" id="lang-bar"></div>
-
-    <h2 id="h-title">✂️ Choose a Style</h2>
-
-    <!-- Styles grid (populated by JS) -->
-    <div class="grid" id="grid"></div>
-    <div class="empty hidden" id="empty-state">
-        <div class="icon">💈</div>
-        <p id="empty-text">No styles available yet.</p>
-    </div>
-
-    <!-- Detail panel -->
-    <div class="detail" id="detail">
-        <div class="price" id="d-price">0 ETB</div>
-        <div style="margin-top:8px;font-weight:600;" id="d-name"></div>
-        <div class="meta" id="d-desc"></div>
-        <div class="meta" id="d-time"></div>
-    </div>
-
-    <!-- Date section -->
-    <div class="section hidden" id="sec-date">
-        <h3 id="h-when">📅 When?</h3>
-        <div class="quick-row">
-            <div class="pill" id="btn-today" onclick="pickDate('today')"></div>
-            <div class="pill" id="btn-tomorrow" onclick="pickDate('tomorrow')"></div>
+    <div class="overlay">
+        <div class="header">
+            <h1 id="shopName">Elite Cuts</h1>
+            <p id="wTitle">Choose a Style</p>
         </div>
-        <div class="quick-row">
-            <input type="date" id="cal" onchange="pickDate('cal')">
-            <div class="pill" style="font-size:13px;" onclick="document.getElementById('cal').showPicker()" id="btn-cal"></div>
+
+        <div class="step-indicator">
+            <div class="dot active" id="dot1"></div>
+            <div class="dot" id="dot2"></div>
+            <div class="dot" id="dot3"></div>
+            <div class="dot" id="dot4"></div>
+        </div>
+
+        <div class="card" id="loadingCard">
+            <div class="spinner-container">
+                <div class="spinner"></div>
+                <div class="loading-text">Loading...</div>
+            </div>
+        </div>
+
+        <!-- STEP 1: STYLES -->
+        <div class="card hidden" id="step1">
+            <div class="section-title">✂️ <span id="wTitle2">Choose a Style</span></div>
+            <div id="stylesList"></div>
+        </div>
+
+        <!-- STEP 2: DATE -->
+        <div class="card hidden" id="step2">
+            <div class="section-title">📅 <span id="wWhen">When do you want to come?</span></div>
+            <div class="grid" style="margin-bottom: 15px;">
+                <div class="grid-item" id="btnToday">Today</div>
+                <div class="grid-item" id="btnTomorrow">Tomorrow</div>
+                <div class="grid-item" id="btnPickDate">📆 Pick Date</div>
+            </div>
+            <input type="date" id="datePicker" class="hidden" min="">
+            <button class="btn btn-secondary" onclick="goToStep(1)">🔙</button>
+        </div>
+
+        <!-- STEP 3: TIME -->
+        <div class="card hidden" id="step3">
+            <div class="section-title">🕒 <span id="wSelectTime">Select Time</span></div>
+            <div id="timeGrid" class="grid"></div>
+            <button class="btn btn-secondary" onclick="goToStep(2)">🔙</button>
+        </div>
+
+        <!-- STEP 4: CHECKOUT -->
+        <div class="card hidden" id="step4">
+            <div class="section-title">💳 Checkout</div>
+            <div class="summary-box">
+                <div class="summary-row"><span>Style:</span> <span id="sumStyle" class="highlight"></span></div>
+                <div class="summary-row"><span>Date:</span> <span id="sumDate"></span></div>
+                <div class="summary-row"><span>Time:</span> <span id="sumTime"></span></div>
+                <div class="summary-row"><span>Total Price:</span> <span id="sumPrice" class="highlight"></span></div>
+                <div class="summary-row" style="border-top: 1px solid #444; padding-top: 8px;">
+                    <span>Deposit Now:</span> <span class="highlight">50 ETB</span>
+                </div>
+            </div>
+            
+            <button class="btn btn-primary" id="payBtn" onclick="initiatePayment(false)">
+                💳 Pay 50 ETB Deposit
+            </button>
+            <button class="btn btn-secondary" id="testBtn" onclick="initiatePayment(true)">
+                🛠️ Test: Skip Payment
+            </button>
+            <button class="btn btn-danger" onclick="goToStep(3)">🔙</button>
+        </div>
+
+        <!-- PROCESSING PAYMENT -->
+        <div class="card hidden" id="processing">
+            <div class="spinner-container">
+                <div class="spinner"></div>
+                <div class="loading-text" id="procText">Verifying Payment…</div>
+                <div class="loading-text" style="font-size: 12px; margin-top: 10px;" id="procSubText">Waiting for bank confirmation. Please don't close this page.</div>
+            </div>
         </div>
     </div>
 
-    <!-- Time section -->
-    <div class="section hidden" id="sec-time">
-        <h3 id="h-time">⏰ Select Time</h3>
-        <div class="time-grid" id="times"></div>
-    </div>
+    <script>
+        // ================================================================
+        // CONFIGURATION & STATE
+        // ================================================================
+        const SHOP_NAME = "Elite Cuts"; // Change this to your barber shop name
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.setHeaderColor("#0f0f0f");
+        tg.setBackgroundColor("#0f0f0f");
 
-    <!-- Pay buttons -->
-    <button class="pay-btn hidden" id="btn-pay" onclick="startPayment()"></button>
-    <button class="pay-btn test hidden" id="btn-test" onclick="startFake()"></button>
-</div>
+        let state = {
+            lang: "en",
+            i18n: {},
+            chat_id: null,
+            styles: [],
+            selectedStyle: null,
+            selectedDate: null,
+            selectedTime: null,
+            dateLabel: null,
+            tx_ref: null
+        };
 
-<!-- ═══════════ VERIFYING SCREEN ═══════════ -->
-<div class="container" id="verify">
-    <div class="anim-wrapper" id="anim-wrapper">
-        <svg class="payment-svg" viewBox="0 0 52 52">
-            <circle class="spinner-path" cx="26" cy="26" r="20" fill="none" stroke-width="4" stroke-linecap="round"/>
-            <path class="check-path" fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
-            <path class="fail-path" fill="none" stroke-width="4" stroke-linecap="round" d="M16 16 L36 36 M36 16 L16 36"/>
-        </svg>
-    </div>
-    <div class="verify-text" id="verify-text">
-        <h2 id="v-title">Verifying Payment…</h2>
-        <p id="v-sub">Waiting for bank confirmation.</p>
-    </div>
-</div>
-
-<script>
-// ──────────────── CONFIG ────────────────
-const API = window.location.origin;
-const PARAMS = new URLSearchParams(window.location.search);
-const tg = window.Telegram.WebApp;
-
-let currentLang = PARAMS.get("lang") || "en";
-let i18n = {};  // populated from server
-let services = [];
-let selected = null;  // service object
-let selectedDate = null;
-let selectedTime = null;
-let txRef = null;
-
-// ──────────────── INIT ────────────────
-tg.ready();
-tg.expand();
-
-(async function init() {
-    // Load translations
-    try {
-        const r = await fetch(`${API}/api/i18n/${currentLang}`);
-        i18n = await r.json();
-    } catch(e) { console.warn("i18n load failed", e); }
-
-    // Load services
-    try {
-        const r = await fetch(`${API}/api/services`);
-        const d = await r.json();
-        services = d.services || [];
-    } catch(e) { console.error("services load failed", e); }
-
-    renderLangBar();
-    applyText();
-    renderGrid();
-})();
-
-// ──────────────── I18N HELPER ────────────────
-function t(key) {
-    return i18n[key] || key;
-}
-
-function applyText() {
-    document.getElementById("h-title").textContent = "✂️ " + t("w_title");
-    document.getElementById("h-when").textContent = "📅 " + t("w_when");
-    document.getElementById("h-time").textContent = "⏰ " + t("w_select_time");
-    document.getElementById("btn-today").textContent = t("w_today");
-    document.getElementById("btn-tomorrow").textContent = t("w_tomorrow");
-    document.getElementById("btn-cal").textContent = "📆 " + t("w_pick_date");
-    document.getElementById("btn-pay").textContent = "💳 " + t("w_pay");
-    document.getElementById("btn-test").textContent = t("w_test");
-    document.getElementById("v-title").textContent = t("w_verifying");
-    document.getElementById("v-sub").textContent = t("w_verifying_sub");
-    document.getElementById("empty-text").textContent = t("w_no_styles");
-}
-
-// ──────────────── LANGUAGE BAR ────────────────
-const LANG_LIST = [
-    {code:"en", flag:"🇬🇧", label:"EN"},
-    {code:"am", flag:"🇪🇹", label:"አማ"},
-    {code:"om", flag:"🟢", label:"OM"},
-    {code:"ti", flag:"🔵", label:"ትግ"},
-    {code:"so", flag:"⭐", label:"SO"},
-    {code:"aa", flag:"🔴", label:"AF"},
-];
-
-function renderLangBar() {
-    const bar = document.getElementById("lang-bar");
-    bar.innerHTML = LANG_LIST.map(l =>
-        `<div class="lang-pill ${l.code===currentLang?'active':''}" onclick="switchLang('${l.code}')">${l.flag} ${l.label}</div>`
-    ).join("");
-}
-
-async function switchLang(code) {
-    currentLang = code;
-    document.querySelectorAll(".lang-pill").forEach((el,i) => {
-        el.classList.toggle("active", LANG_LIST[i].code === code);
-    });
-    try {
-        const r = await fetch(`${API}/api/i18n/${code}`);
-        i18n = await r.json();
-    } catch(e) {}
-    applyText();
-}
-
-// ──────────────── RENDER GRID ────────────────
-function renderGrid() {
-    const grid = document.getElementById("grid");
-    const empty = document.getElementById("empty-state");
-
-    if (!services.length) {
-        grid.classList.add("hidden");
-        empty.classList.remove("hidden");
-        return;
-    }
-
-    empty.classList.add("hidden");
-    grid.classList.remove("hidden");
-
-    grid.innerHTML = services.map(s => `
-        <div class="card" id="card-${s.id}" onclick="selectService(${s.id})">
-            ${s.image_url ? `<img src="${s.image_url}" alt="${s.name}" loading="lazy">` :
-              `<div style="height:120px;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:36px;">✂️</div>`}
-            <div class="badge">${s.price} ETB</div>
-            <div class="label">${s.name}</div>
-        </div>
-    `).join("");
-}
-
-function selectService(id) {
-    document.querySelectorAll(".card").forEach(c => c.classList.remove("selected"));
-    document.getElementById(`card-${id}`).classList.add("selected");
-    selected = services.find(s => s.id === id);
-
-    const det = document.getElementById("detail");
-    det.style.display = "block";
-    document.getElementById("d-price").textContent = selected.price + " ETB";
-    document.getElementById("d-name").textContent = selected.name;
-    document.getElementById("d-desc").textContent = selected.description || "";
-    document.getElementById("d-time").textContent = selected.est_time ? "⏱️ " + t("w_est") + ": " + selected.est_time : "";
-
-    document.getElementById("sec-date").classList.remove("hidden");
-}
-
-// ──────────────── DATE ────────────────
-function pickDate(type) {
-    let d = new Date();
-    if (type === "tomorrow") d.setDate(d.getDate() + 1);
-    if (type === "cal") {
-        const v = document.getElementById("cal").value;
-        if (!v) return;
-        d = new Date(v + "T00:00:00");
-    }
-    selectedDate = d.toISOString().split("T")[0];
-    document.querySelectorAll("#sec-date .pill").forEach(p => p.classList.remove("active"));
-    if (type === "today") document.getElementById("btn-today").classList.add("active");
-    else if (type === "tomorrow") document.getElementById("btn-tomorrow").classList.add("active");
-    document.getElementById("cal").value = "";
-    document.getElementById("sec-time").classList.remove("hidden");
-    loadTimes(selectedDate);
-}
-
-async function loadTimes(dateStr) {
-    const grid = document.getElementById("times");
-    grid.innerHTML = `<div style="grid-column:span 3;text-align:center;color:var(--hint);padding:20px;">${t("w_loading")}</div>`;
-    try {
-        const r = await fetch(`${API}/api/get-times?date=${dateStr}`);
-        const d = await r.json();
-        const times = d.available_times || [];
-        if (!times.length) {
-            grid.innerHTML = `<div style="grid-column:span 3;text-align:center;color:var(--hint);padding:20px;">${t("w_no_times")}</div>`;
-            return;
-        }
-        grid.innerHTML = times.map(t => {
-            const [h,m] = t.split(":");
-            const ap = h >= 12 ? "PM" : "AM";
-            const h12 = h % 12 || 12;
-            return `<div class="time-pill" onclick="selectTime('${t}',this)">${h12}:${m} ${ap}</div>`;
-        }).join("");
-    } catch(e) {
-        grid.innerHTML = `<div style="grid-column:span 3;text-align:center;color:var(--danger);padding:20px;">Error</div>`;
-    }
-}
-
-function selectTime(t, el) {
-    selectedTime = t;
-    document.querySelectorAll(".time-pill").forEach(p => p.classList.remove("active"));
-    el.classList.add("active");
-    document.getElementById("btn-pay").classList.remove("hidden");
-    document.getElementById("btn-test").classList.remove("hidden");
-}
-
-// ──────────────── ANIMATION STATES ────────────────
-function showVerify() {
-    document.getElementById("booking").classList.add("hidden");
-    document.getElementById("verify").style.display = "block";
-    
-    // Reset to spinning state
-    document.getElementById("anim-wrapper").className = "anim-wrapper";
-    document.getElementById("verify-text").className = "verify-text";
-    document.getElementById("v-title").textContent = t("w_verifying");
-    document.getElementById("v-title").style.color = "var(--text)";
-    document.getElementById("v-sub").textContent = t("w_verifying_sub");
-}
-
-function showSuccessAnim() {
-    document.getElementById("anim-wrapper").classList.add("success");
-    document.getElementById("verify-text").classList.add("success");
-    document.getElementById("v-title").textContent = "Payment Completed!";
-    document.getElementById("v-sub").textContent = "Confirming your booking...";
-}
-
-function showFailureAnim() {
-    document.getElementById("anim-wrapper").classList.add("failed");
-    document.getElementById("verify-text").classList.add("failed");
-    document.getElementById("v-title").textContent = "Payment Failed!";
-    document.getElementById("v-sub").textContent = "Please try again.";
-}
-
-function finish() {
-    const payload = {
-        tx_ref: txRef,
-        image_url: selected.image_url || null,
-        style_name: selected.name,
-        style_desc: selected.description || null,
-    };
-    
-    // ALWAYS use API fallback — it's 100% reliable
-    // sendData is unreliable (silently fails, never closes app)
-    fetch(`${API}/api/confirm-booking`, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-            chat_id: tg.initDataUnsafe.user.id,
-            tx_ref: txRef,
-            image_url: selected.image_url || null,
-            style_name: selected.name,
-            style_desc: selected.description || null,
-        })
-    }).catch(e => {
-        console.log("API fallback error:", e);
-    }).finally(() => {
-        // ALWAYS close after API call finishes
-        setTimeout(() => { 
-            try { tg.close(); } catch(e) {} 
-        }, 500);
-    });
-}
-// ──────────────── FAKE PAYMENT ────────────────
-async function startFake() {
-    if (!selected || !selectedDate || !selectedTime) return alert(t("w_complete"));
-    const btn = document.getElementById("btn-test");
-    btn.disabled = true;
-    btn.textContent = t("w_testing");
-
-    try {
-        const r = await fetch(`${API}/api/fake-payment`, {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                chat_id: tg.initDataUnsafe.user.id,
-                first_name: tg.initDataUnsafe.user.first_name,
-                service_id: selected.id,
-                service_name: selected.name,
-                service_price: selected.price,
-                date: selectedDate,
-                time: selectedTime,
-            })
-        });
-        const d = await r.json();
-        if (d.status === "success") {
-            txRef = d.tx_ref;
-            showVerify();
-            // 1. Spin for 1.2 seconds
-            setTimeout(() => {
-                // 2. Transform to Checkmark
-                showSuccessAnim();
-                // 3. Wait for animation to finish, then close
-                setTimeout(() => { finish(); }, 1800);
-            }, 1200);
-        } else {
-            showVerify();
-            showFailureAnim();
-            btn.disabled = false;
-            btn.textContent = t("w_test");
-        }
-    } catch(e) {
-        showVerify();
-        showFailureAnim();
-        btn.disabled = false;
-        btn.textContent = t("w_test");
-    }
-}
-
-// ──────────────── REAL PAYMENT ────────────────
-async function startPayment() {
-    if (!selected || !selectedDate || !selectedTime) return alert(t("w_complete"));
-    const btn = document.getElementById("btn-pay");
-    btn.disabled = true;
-    btn.textContent = t("w_connecting");
-
-    try {
-        const r = await fetch(`${API}/api/create-payment`, {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-                chat_id: tg.initDataUnsafe.user.id,
-                first_name: tg.initDataUnsafe.user.first_name,
-                service_id: selected.id,
-                service_name: selected.name,
-                service_price: selected.price,
-                date: selectedDate,
-                time: selectedTime,
-            })
-        });
-        const d = await r.json();
-        if (d.status === "success") {
-            txRef = d.tx_ref;
-            showVerify();
-            window.open(d.checkout_url, "_blank");
-            pollStatus();
-        } else {
-            alert("Error: " + (d.error || JSON.stringify(d)));
-            btn.disabled = false;
-            btn.textContent = "💳 " + t("w_pay");
-        }
-    } catch(e) {
-        alert(t("w_net_err"));
-        btn.disabled = false;
-        btn.textContent = "💳 " + t("w_pay");
-    }
-}
-
-function pollStatus() {
-    const iv = setInterval(async () => {
-        try {
-            const r = await fetch(`${API}/api/check-status?tx_ref=${txRef}`);
-            const d = await r.json();
-            if (d.payment_status === "paid") {
-                clearInterval(iv);
-                showSuccessAnim();
-                setTimeout(() => { finish(); }, 1800);
-            } else if (d.payment_status === "failed") {
-                clearInterval(iv);
-                showFailureAnim();
-                setTimeout(() => { location.reload(); }, 2500);
+        // ================================================================
+        // INITIALIZATION
+        // ================================================================
+        async function init() {
+            document.getElementById('shopName').innerText = SHOP_NAME;
+            
+            // Get Chat ID
+            state.chat_id = tg.initDataUnsafe?.user?.id || "123456789"; // Fallback for local testing
+            
+            // Get Language (1. URL param, 2. Telegram User DB, 3. Default 'en')
+            const urlParams = new URLSearchParams(window.location.search);
+            let lang = urlParams.get('lang');
+            
+            if (!lang) {
+                try {
+                    const res = await fetch(`/api/user-lang?chat_id=${state.chat_id}`);
+                    const data = await res.json();
+                    lang = data.lang || "en";
+                } catch (e) {
+                    lang = "en";
+                }
             }
-        } catch(e) {}
-    }, 3000);
-}
-</script>
+            state.lang = lang;
+
+            // Check if returning from Chapa Payment (tx_ref in URL)
+            const tx_ref = urlParams.get('tx_ref');
+            if (tx_ref) {
+                state.tx_ref = tx_ref;
+                // Restore style data from sessionStorage if available
+                const savedStyle = sessionStorage.getItem('pending_style');
+                if (savedStyle) {
+                    state.selectedStyle = JSON.parse(savedStyle);
+                }
+                showProcessing();
+                pollStatus();
+                return;
+            }
+
+            // Load Translations & Styles
+            await loadI18n();
+            await loadStyles();
+            
+            goToStep(1);
+        }
+
+        async function loadI18n() {
+            try {
+                const res = await fetch(`/api/i18n/${state.lang}`);
+                state.i18n = await res.json();
+                updateTexts();
+            } catch (e) {
+                console.error("Failed to load i18n", e);
+            }
+        }
+
+        function updateTexts() {
+            const t = state.i18n;
+            document.getElementById('wTitle').innerText = t.w_title || "Choose a Style";
+            document.getElementById('wTitle2').innerText = t.w_title || "Choose a Style";
+            document.getElementById('wWhen').innerText = t.w_when || "When do you want to come?";
+            document.getElementById('wSelectTime').innerText = t.w_select_time || "Select Time";
+            
+            document.getElementById('btnToday').innerText = t.w_today || "Today";
+            document.getElementById('btnTomorrow').innerText = t.w_tomorrow || "Tomorrow";
+            document.getElementById('btnPickDate').innerText = t.w_pick_date || "📆 Pick Date";
+            
+            document.getElementById('payBtn').innerText = `💳 ${t.w_pay || "Pay 50 ETB Deposit"}`;
+            document.getElementById('testBtn').innerText = `🛠️ ${t.w_test || "Test: Skip Payment"}`;
+            
+            document.getElementById('procText').innerText = t.w_verifying || "Verifying Payment…";
+            document.getElementById('procSubText').innerText = t.w_verifying_sub || "Waiting for bank confirmation. Please don't close this page.";
+        }
+
+        // ================================================================
+        // DATA LOADING
+        // ================================================================
+        async function loadStyles() {
+            try {
+                const res = await fetch('/api/services');
+                const data = await res.json();
+                state.styles = data.services || [];
+                renderStyles();
+            } catch (e) {
+                document.getElementById('stylesList').innerHTML = `<p style="color:red; text-align:center;">Failed to load styles.</p>`;
+            }
+        }
+
+        function renderStyles() {
+            const list = document.getElementById('stylesList');
+            if (state.styles.length === 0) {
+                list.innerHTML = `<p style="text-align:center; color:var(--text-muted);">${state.i18n.w_no_styles || "No styles available yet. The barber is setting things up — check back soon!"}</p>`;
+                return;
+            }
+
+            list.innerHTML = state.styles.map(s => `
+                <div class="style-item" onclick="selectStyle(${s.id})" id="style-${s.id}">
+                    ${s.image_url ? `<img src="${s.image_url}" alt="${s.name}">` : `<img src="https://via.placeholder.com/60?text=?" alt="?">`}
+                    <div class="style-info">
+                        <div class="style-name">${s.name}</div>
+                        <div class="style-desc">${s.description || ''}</div>
+                        <div class="style-meta">
+                            <span class="style-price">${s.price} ETB</span>
+                            <span class="style-time">⏱️ ${s.est_time || ''}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ================================================================
+        // NAVIGATION & SELECTION
+        // ================================================================
+        function goToStep(step) {
+            for (let i = 1; i <= 4; i++) {
+                document.getElementById(`step${i}`).classList.add('hidden');
+                document.getElementById(`dot${i}`).classList.remove('active');
+            }
+            document.getElementById(`step${step}`).classList.remove('hidden');
+            document.getElementById(`dot${step}`).classList.add('active');
+
+            if (step === 1) loadStyles();
+            if (step === 2) initDateButtons();
+            if (step === 4) updateCheckoutSummary();
+        }
+
+        function selectStyle(id) {
+            state.selectedStyle = state.styles.find(s => s.id === id);
+            document.querySelectorAll('.style-item').forEach(el => el.classList.remove('selected'));
+            document.getElementById(`style-${id}`).classList.add('selected');
+            
+            setTimeout(() => goToStep(2), 300);
+        }
+
+        function initDateButtons() {
+            const today = new Date();
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+
+            document.getElementById('datePicker').min = today.toISOString().split('T')[0];
+            document.getElementById('datePicker').addEventListener('change', (e) => {
+                if (e.target.value) {
+                    state.selectedDate = e.target.value;
+                    state.dateLabel = new Date(e.target.value).toLocaleDateString(state.lang, { weekday: 'short', month: 'short', day: 'numeric' });
+                    loadTimes();
+                }
+            });
+
+            document.getElementById('btnToday').onclick = () => {
+                state.selectedDate = today.toISOString().split('T')[0];
+                state.dateLabel = state.i18n.w_today || "Today";
+                loadTimes();
+            };
+            
+            document.getElementById('btnTomorrow').onclick = () => {
+                state.selectedDate = tomorrow.toISOString().split('T')[0];
+                state.dateLabel = state.i18n.w_tomorrow || "Tomorrow";
+                loadTimes();
+            };
+
+            document.getElementById('btnPickDate').onclick = () => {
+                document.getElementById('datePicker').classList.remove('hidden');
+                document.getElementById('datePicker').focus();
+            };
+        }
+
+        async function loadTimes() {
+            const timeGrid = document.getElementById('timeGrid');
+            timeGrid.innerHTML = `<div style="grid-column: 1/-1; text-align:center; padding: 20px;">${state.i18n.w_loading || "Loading times…"}</div>`;
+            goToStep(3);
+
+            try {
+                const res = await fetch(`/api/get-times?date=${state.selectedDate}`);
+                const data = await res.json();
+                const times = data.available_times || [];
+
+                if (times.length === 0) {
+                    timeGrid.innerHTML = `<p style="grid-column: 1/-1; text-align:center; color:var(--text-muted);">${state.i18n.w_no_times || "No times available for this date."}</p>`;
+                    return;
+                }
+
+                timeGrid.innerHTML = times.map(t => {
+                    const formatted = formatTime(t);
+                    return `<div class="grid-item" onclick="selectTime('${t}', '${formatted}')">${formatted}</div>`;
+                }).join('');
+
+            } catch (e) {
+                timeGrid.innerHTML = `<p style="color:red;">Error loading times.</p>`;
+            }
+        }
+
+        function selectTime(timeVal, formattedTime) {
+            state.selectedTime = timeVal;
+            document.querySelectorAll('#timeGrid .grid-item').forEach(el => el.classList.remove('selected'));
+            event.target.classList.add('selected');
+            
+            setTimeout(() => goToStep(4), 300);
+        }
+
+        function updateCheckoutSummary() {
+            if (!state.selectedStyle) return;
+            document.getElementById('sumStyle').innerText = state.selectedStyle.name;
+            document.getElementById('sumDate').innerText = state.dateLabel;
+            document.getElementById('sumTime').innerText = formatTime(state.selectedTime);
+            document.getElementById('sumPrice').innerText = `${state.selectedStyle.price} ETB`;
+        }
+
+        function formatTime(t) {
+            const [h, m] = t.split(':');
+            const hour = parseInt(h);
+            const ampm = hour >= 12 ? 'PM' : 'AM';
+            const formattedHour = hour % 12 || 12;
+            return `${formattedHour}:${m} ${ampm}`;
+        }
+
+        // ================================================================
+        // PAYMENT FLOW
+        // ================================================================
+        async function initiatePayment(isTest) {
+            if (!state.selectedStyle || !state.selectedDate || !state.selectedTime) {
+                alert(state.i18n.w_complete || "Please complete all steps above.");
+                return;
+            }
+
+            // Save style data to sessionStorage in case page reloads after Chapa redirect
+            sessionStorage.setItem('pending_style', JSON.stringify(state.selectedStyle));
+
+            showProcessing();
+            document.getElementById('procText').innerText = state.i18n.w_connecting || "Connecting to Chapa…";
+
+            const endpoint = isTest ? '/api/fake-payment' : '/api/create-payment';
+            const payload = {
+                chat_id: state.chat_id,
+                first_name: tg.initDataUnsafe?.user?.first_name || "Customer",
+                service_name: state.selectedStyle.name,
+                service_price: state.selectedStyle.price,
+                date: state.selectedDate,
+                time: state.selectedTime
+            };
+
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                
+                if (data.status === "success") {
+                    state.tx_ref = data.tx_ref;
+                    
+                    if (isTest) {
+                        document.getElementById('procText').innerText = state.i18n.w_testing || "Processing test…";
+                        setTimeout(pollStatus, 1500); // Fake delay for test
+                    } else {
+                        // Redirect to Chapa Checkout
+                        window.location.href = data.checkout_url;
+                    }
+                } else {
+                    throw new Error(data.error || "Failed to initiate payment");
+                }
+            } catch (e) {
+                hideProcessing();
+                alert((state.i18n.w_net_err || "Network error. Check connection and retry.") + "\n" + e.message);
+                goToStep(4);
+            }
+        }
+
+        async function pollStatus() {
+            if (!state.tx_ref) return;
+            
+            document.getElementById('procText').innerText = state.i18n.w_verifying || "Verifying Payment…";
+            
+            let attempts = 0;
+            const maxAttempts = 20; // Poll for ~1 minute
+            
+            const interval = setInterval(async () => {
+                attempts++;
+                try {
+                    const res = await fetch(`/api/check-status?tx_ref=${state.tx_ref}`);
+                    const data = await res.json();
+                    
+                    if (data.payment_status === "paid") {
+                        clearInterval(interval);
+                        sendToBot();
+                    } else if (attempts >= maxAttempts) {
+                        clearInterval(interval);
+                        hideProcessing();
+                        alert(state.i18n.w_pay_fail || "Payment failed or timed out. Try again.");
+                        goToStep(4);
+                    }
+                } catch (e) {
+                    console.error("Polling error", e);
+                }
+            }, 3000); // Check every 3 seconds
+        }
+
+        function sendToBot() {
+            const payload = {
+                tx_ref: state.tx_ref,
+                image_url: state.selectedStyle.image_url,
+                style_name: state.selectedStyle.name,
+                style_desc: state.selectedStyle.description
+            };
+            
+            // sendData sends data back to the Telegram Bot and closes the app
+            tg.sendData(JSON.stringify(payload));
+        }
+
+        function showProcessing() {
+            document.querySelectorAll('.card').forEach(c => c.classList.add('hidden'));
+            document.getElementById('processing').classList.remove('hidden');
+            document.querySelectorAll('.dot').forEach(d => d.classList.remove('active'));
+        }
+
+        function hideProcessing() {
+            document.getElementById('processing').classList.add('hidden');
+        }
+
+        // Start the app
+        init();
+    </script>
 </body>
 </html>
