@@ -2,10 +2,11 @@
 Barber Shop Telegram Bot — Production Build
 Features: 6-language i18n, admin style upload, Chapa payments, waitlist, 24/7 ready
 """
+import re
 import os
 
 TOKEN = os.getenv("8993843264:AAGajDD6jYqz4_qlyA4lZF1dZMEMElmlxtk")
-import re
+
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
     ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, WebAppInfo
@@ -956,12 +957,68 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================================================================
 # 5. WEB APP DATA — receives sendData() after payment
 # ================================================================
+async def _send_final_confirmation(update_msg, bot, pending, phone, lang):
+    """Send confirmation to customer + notify owner"""
+    first_name = pending["first_name"]
+    svc = pending["svc"]
+    price = pending["price"]
+    appt_date = pending["appt_date"]
+    appt_time = pending["appt_time"]
+    image_url = pending["image_url"]
+    style_desc = pending["style_desc"]
+    appt_id = pending["appt_id"]
+
+    c = db()
+    c.cursor().execute("UPDATE appointments SET phone=? WHERE id=?", (phone, appt_id))
+    c.cursor().execute("DELETE FROM pending_web_data WHERE chat_id=?", (pending["chat_id"],))
+    c.commit()
+    c.close()
+
+    d_obj = datetime.strptime(appt_date, "%Y-%m-%d")
+    t_obj = datetime.strptime(appt_time, "%H:%M")
+
+    text = (
+        f"✅ *Booking Confirmed, {first_name}!*\n\n"
+        f"💳 *Deposit Paid:* 50 ETB via Chapa\n"
+        f"💶 *Remaining:* {price - 50} ETB (Pay at shop)\n"
+        f"💈 *Service:* {svc}\n"
+    )
+    if style_desc:
+        text += f"📝 *Description:* {style_desc}\n"
+    text += (
+        f"📞 *Phone:* {phone}\n"
+        f"\n📅 *When:* {d_obj.strftime('%a, %b %d')} at {t_obj.strftime('%I:%M %p')}\n\n"
+        f"We will see you at the shop!"
+    )
+
+    kb = [[InlineKeyboardButton(tr("cancel_btn", lang), callback_data=f"cust_cancel_{appt_id}")]]
+
+    if image_url:
+        try:
+            await update_msg.reply_photo(photo=image_url, caption=text,
+                reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        except Exception:
+            await update_msg.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    else:
+        await update_msg.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+    # Fix 5: Notify owner with full details
+    try:
+        await bot.send_message(BARBER_ID,
+            f"✅ *New Booking*\n\n"
+            f"👤 *Customer:* {first_name}\n"
+            f"💈 *Service:* {svc}\n"
+            f"💰 *Price:* {price} ETB\n"
+            f"📅 *When:* {d_obj.strftime('%a, %b %d')} at {t_obj.strftime('%I:%M %p')}\n"
+            f"📞 *Phone:* {phone}",
+            parse_mode="Markdown")
+    except Exception:
+        pass
 async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     lang = load_lang(chat_id)
     context.user_data["lang"] = lang
 
-    # If API fallback already handled this, skip
     c = db()
     already = c.cursor().execute("SELECT 1 FROM pending_web_data WHERE chat_id=?", (chat_id,)).fetchone()
     if already:
@@ -1001,32 +1058,38 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         svc = style_name or row[1]
         appt_id = row[5]
 
-        # Update name
         c.cursor().execute("UPDATE appointments SET client_name=? WHERE id=?", (first_name, appt_id))
-
-        # Save pending data to DB
         c.cursor().execute(
             "INSERT OR REPLACE INTO pending_web_data (chat_id,tx_ref,image_url,style_name,style_desc) VALUES (?,?,?,?,?)",
             (chat_id, tx_ref, image_url, style_name, style_desc))
+
+        # Fix 4: Check if user already has a phone number
+        phone_row = c.cursor().execute(
+            "SELECT phone FROM appointments WHERE chat_id=? AND phone IS NOT NULL "
+            "AND phone NOT IN ('N/A','Via WebApp') ORDER BY id DESC LIMIT 1", (chat_id,)
+        ).fetchone()
+        known_phone = phone_row[0] if phone_row else None
         c.commit()
         c.close()
 
-        # Save to context for phone handler
-        context.user_data["pending_confirmation"] = {
+        pending_data = {
             "chat_id": chat_id, "first_name": first_name, "appt_id": appt_id,
             "svc": svc, "price": row[2], "appt_date": row[3], "appt_time": row[4],
             "image_url": image_url, "style_desc": style_desc,
         }
 
-        print(f"[WebApp] Received data from {chat_id}, asking for phone...")
-
-        # Ask for phone
-        kb = [[KeyboardButton(tr("share_phone", lang), request_contact=True)]]
-        await update.message.reply_text(
-            tr("phone_ask", lang),
-            reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True, one_time_keyboard=True),
-            parse_mode="Markdown"
-        )
+        if known_phone:
+            # Fix 4: Skip phone prompt, send confirmation directly
+            print(f"[WebApp] {chat_id} has known phone, sending confirmation directly")
+            await _send_final_confirmation(update.message, context.bot, pending_data, known_phone, lang)
+        else:
+            context.user_data["pending_confirmation"] = pending_data
+            print(f"[WebApp] Received data from {chat_id}, asking for phone...")
+            kb = [[KeyboardButton(tr("share_phone", lang), request_contact=True)]]
+            await update.message.reply_text(
+                tr("phone_ask", lang),
+                reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True, one_time_keyboard=True),
+                parse_mode="Markdown")
 
     except Exception as e:
         print(f"[WebApp] ERROR: {e}")
@@ -1035,45 +1098,51 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         except:
             pass
 async def handle_phone_share(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Get pending data from context (normal path) or DB (fallback path)
     pending = context.user_data.get("pending_confirmation")
 
     if not pending:
-        # Fallback: loadData from DB (happens when sendData failed)
         chat_id = update.effective_chat.id
         c = db()
         row = c.cursor().execute(
             "SELECT tx_ref, image_url, style_name, style_desc FROM pending_web_data WHERE chat_id=?", (chat_id,)
         ).fetchone()
-
         if not row:
             c.close()
             return
-
         tx_ref_db = row[0]
         c.cursor().execute("DELETE FROM pending_web_data WHERE chat_id=?", (chat_id,))
-
-        # Get appointment details
         appt = c.cursor().execute(
             "SELECT id, client_name, service, price, appointment_date, appointment_time FROM appointments WHERE chapa_tx_ref=?",
-            (tx_ref_db,)
-        ).fetchone()
+            (tx_ref_db,)).fetchone()
         c.close()
-
         if not appt:
             return
-
         pending = {
-            "chat_id": chat_id,
-            "first_name": update.effective_user.first_name,
-            "appt_id": appt[0],
-            "svc": appt[2],
-            "price": appt[3],
-            "appt_date": appt[4],
-            "appt_time": appt[5],
-            "image_url": row[1],
-            "style_desc": row[3],
+            "chat_id": chat_id, "first_name": update.effective_user.first_name,
+            "appt_id": appt[0], "svc": appt[2], "price": appt[3],
+            "appt_date": appt[4], "appt_time": appt[5],
+            "image_url": row[1], "style_desc": row[3],
         }
+
+    if update.message.contact:
+        phone = update.message.contact.phone_number
+    elif update.message.text:
+        text = update.message.text.strip().replace(" ", "")
+        if not re.match(r'^\+?\d{8,15}$', text):
+            await update.message.reply_text(tr("phone_invalid", user_lang(context)))
+            return
+        phone = text
+    else:
+        return
+
+    lang = user_lang(context)
+    try:
+        await update.message.reply_text(tr("phone_thanks", lang), reply_markup=ReplyKeyboardRemove())
+    except:
+        pass
+
+    await _send_final_confirmation(update.message, context.bot, pending, phone, lang)
+    context.user_data.pop("pending_confirmation", None)
 
     # Get phone from contact button or manual text
     if update.message.contact:
@@ -1157,11 +1226,33 @@ async def cust_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     appt = get_appt(aid)
     if not appt or appt[6] != "booked":
         await q.edit_message_text(tr("not_active", lang)); return
+
+    name = appt[2]
+    svc = appt[3]
+    appt_date = appt[4]
+    appt_time = appt[5]
+
+    d_obj = datetime.strptime(appt_date, "%Y-%m-%d")
+    t_obj = datetime.strptime(appt_time, "%H:%M")
+
     set_appt_status(aid, "cancelled")
-    await q.edit_message_text(tr("canceled_ok", lang))
+
+    # Fix 3: Detailed cancel confirmation to customer
+    await q.edit_message_text(
+        f"✅ *Booking Canceled*\n\n"
+        f"💈 *Service:* {svc}\n"
+        f"📅 *Was:* {d_obj.strftime('%a, %b %d')} at {t_obj.strftime('%I:%M %p')}\n\n"
+        f"You can always book again from the menu!",
+        parse_mode="Markdown")
+
+    # Fix 5: Owner notification with name and details
     await context.bot.send_message(BARBER_ID,
-        tr("cust_cancel_note", "en", d=appt[4], t=appt[5]))
-    await _offer_waitlist(context, appt[4], appt[5])
+        f"❌ *Booking Canceled*\n\n"
+        f"👤 *Customer:* {name}\n"
+        f"💈 *Service:* {svc}\n"
+        f"📅 *Was:* {d_obj.strftime('%a, %b %d')} at {t_obj.strftime('%I:%M %p')}",
+        parse_mode="Markdown")
+    await _offer_waitlist(context, appt_date, appt_time)
 
 
 async def _offer_waitlist(ctx: ContextTypes.DEFAULT_TYPE, d: str, t: str):
@@ -1523,11 +1614,42 @@ def run_flask():
     port = int(os.getenv("PORT", 5000))
     print(f"🌐 Flask server starting on port {port}")
     flask_app.run(host="0.0.0.0", port=port, use_reloader=False)
+async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
+    now = datetime.now()
+    target = now + timedelta(minutes=30)
+    target_time = target.strftime("%H:%M")
+    target_date = target.strftime("%Y-%m-%d")
 
+    conn = db()
+    rows = conn.cursor().execute(
+        "SELECT id, chat_id, client_name, service, appointment_time "
+        "FROM appointments WHERE appointment_date=? AND appointment_time=? "
+        "AND status='booked' AND payment_status='paid' AND reminded=0",
+        (target_date, target_time)
+    ).fetchall()
+
+    for row in rows:
+        appt_id, chat_id, name, service, time_str = row
+        t_obj = datetime.strptime(time_str, "%H:%M")
+        lang = load_lang(chat_id)
+        text = (
+            f"⏰ *Reminder, {name}!*\n\n"
+            f"Your appointment is in 30 minutes!\n\n"
+            f"💈 *Service:* {service}\n"
+            f"📅 *Time:* {t_obj.strftime('%I:%M %p')}\n\n"
+            f"Please head to the shop now!"
+        )
+        try:
+            await context.bot.send_message(chat_id, text, parse_mode="Markdown")
+            conn.cursor().execute("UPDATE appointments SET reminded=1 WHERE id=?", (appt_id,))
+            conn.commit()
+        except Exception:
+            pass
+    conn.close()
 
 def main():
     if not TOKEN:
-        print("❌ BOT_TOKEN not set"); return
+        print("❌ BOT_TOKEN not set in .env"); return
 
     init_db()
 
@@ -1535,27 +1657,37 @@ def main():
     t = threading.Thread(target=run_flask, daemon=True)
     t.start()
 
-    # ALWAYS use timeouts — works on Railway AND locally
-    from telegram.request import HTTPXRequest
-    req = HTTPXRequest(
-        connect_timeout=30.0,
-        read_timeout=30.0,
-        write_timeout=30.0
-    )
-    app = Application.builder().token(TOKEN).request(req).build()
+    # Build Telegram app WITH PROXY + longer timeout
+    proxy = os.getenv("PROXY", "")
+    if proxy:
+        from telegram.request import HTTPXRequest
+        print(f"🌐 Using proxy: {proxy}")
+        req = HTTPXRequest(
+            proxy=proxy,
+            connect_timeout=60,
+            read_timeout=60,
+            write_timeout=60
+        )
+        app = Application.builder().token(TOKEN).request(req).build()
+    else:
+        print("⚠️ No proxy — will timeout in Ethiopia!")
+        app = Application.builder().token(TOKEN).build()
 
-    # ConversationHandler
+    # ── ConversationHandler: admin style upload ──
     style_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(add_style_entry, pattern="^adm_add_style$")],
-        states={ADD_STYLE_PHOTO: [
-            MessageHandler(filters.PHOTO, add_style_photo),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, add_style_wrong),
-        ]},
+        states={
+            ADD_STYLE_PHOTO: [
+                MessageHandler(filters.PHOTO, add_style_photo),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, add_style_wrong),
+            ]
+        },
         fallbacks=[CommandHandler("cancel", cancel_conv)],
-        per_chat=True, per_message=False,
+        per_chat=True,
+        per_message=False,
     )
 
-    # Handlers
+    # ── Register handlers ──
     app.add_handler(style_conv)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_start))
@@ -1568,12 +1700,9 @@ def main():
     app.add_handler(MessageHandler(filters.CONTACT, handle_phone_share))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_open_dash))
 
-    print("💈 Barber bot running…")
+    print("💈 Barber bot running… Press Ctrl+C to stop.")
     app.run_polling(drop_pending_updates=True)
-
-
-if __name__ == "__main__":
-    main()
+    app = Application.builder().token(TOKEN).request(req).build()
 
     # 30-minute reminder job — runs every 60 seconds
     app.job_queue.run_repeating(reminder_job, interval=60, first=1)
