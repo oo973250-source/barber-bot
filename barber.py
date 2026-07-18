@@ -1120,7 +1120,7 @@ async def cust_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ *Booking Canceled*\n\n"
         f"💈 *Service:* {svc}\n"
         f"📅 *Was:* {d_obj.strftime('%a, %b %d')} at {t_obj.strftime('%I:%M %p')}\n\n"
-        f"You can always book again from the menu!",
+        f"You can always book again from the menu!---- /start -----",
         parse_mode="Markdown")
 
     await context.bot.send_message(BARBER_ID,
