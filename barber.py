@@ -1523,42 +1523,11 @@ def run_flask():
     port = int(os.getenv("PORT", 5000))
     print(f"🌐 Flask server starting on port {port}")
     flask_app.run(host="0.0.0.0", port=port, use_reloader=False)
-async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
-    now = datetime.now()
-    target = now + timedelta(minutes=30)
-    target_time = target.strftime("%H:%M")
-    target_date = target.strftime("%Y-%m-%d")
 
-    conn = db()
-    rows = conn.cursor().execute(
-        "SELECT id, chat_id, client_name, service, appointment_time "
-        "FROM appointments WHERE appointment_date=? AND appointment_time=? "
-        "AND status='booked' AND payment_status='paid' AND reminded=0",
-        (target_date, target_time)
-    ).fetchall()
-
-    for row in rows:
-        appt_id, chat_id, name, service, time_str = row
-        t_obj = datetime.strptime(time_str, "%H:%M")
-        lang = load_lang(chat_id)
-        text = (
-            f"⏰ *Reminder, {name}!*\n\n"
-            f"Your appointment is in 30 minutes!\n\n"
-            f"💈 *Service:* {service}\n"
-            f"📅 *Time:* {t_obj.strftime('%I:%M %p')}\n\n"
-            f"Please head to the shop now!"
-        )
-        try:
-            await context.bot.send_message(chat_id, text, parse_mode="Markdown")
-            conn.cursor().execute("UPDATE appointments SET reminded=1 WHERE id=?", (appt_id,))
-            conn.commit()
-        except Exception:
-            pass
-    conn.close()
 
 def main():
     if not TOKEN:
-        print("❌ BOT_TOKEN not set in .env"); return
+        print("❌ BOT_TOKEN not set"); return
 
     init_db()
 
@@ -1566,37 +1535,27 @@ def main():
     t = threading.Thread(target=run_flask, daemon=True)
     t.start()
 
-    # Build Telegram app WITH PROXY + longer timeout
-    proxy = os.getenv("PROXY", "")
-    if proxy:
-        from telegram.request import HTTPXRequest
-        print(f"🌐 Using proxy: {proxy}")
-        req = HTTPXRequest(
-            proxy=proxy,
-            connect_timeout=60,
-            read_timeout=60,
-            write_timeout=60
-        )
-        app = Application.builder().token(TOKEN).request(req).build()
-    else:
-        print("⚠️ No proxy — will timeout in Ethiopia!")
-        app = Application.builder().token(TOKEN).build()
+    # ALWAYS use timeouts — works on Railway AND locally
+    from telegram.request import HTTPXRequest
+    req = HTTPXRequest(
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0
+    )
+    app = Application.builder().token(TOKEN).request(req).build()
 
-    # ── ConversationHandler: admin style upload ──
+    # ConversationHandler
     style_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(add_style_entry, pattern="^adm_add_style$")],
-        states={
-            ADD_STYLE_PHOTO: [
-                MessageHandler(filters.PHOTO, add_style_photo),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, add_style_wrong),
-            ]
-        },
+        states={ADD_STYLE_PHOTO: [
+            MessageHandler(filters.PHOTO, add_style_photo),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, add_style_wrong),
+        ]},
         fallbacks=[CommandHandler("cancel", cancel_conv)],
-        per_chat=True,
-        per_message=False,
+        per_chat=True, per_message=False,
     )
 
-    # ── Register handlers ──
+    # Handlers
     app.add_handler(style_conv)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_start))
@@ -1609,9 +1568,12 @@ def main():
     app.add_handler(MessageHandler(filters.CONTACT, handle_phone_share))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_open_dash))
 
-    print("💈 Barber bot running… Press Ctrl+C to stop.")
+    print("💈 Barber bot running…")
     app.run_polling(drop_pending_updates=True)
-    app = Application.builder().token(TOKEN).request(req).build()
+
+
+if __name__ == "__main__":
+    main()
 
     # 30-minute reminder job — runs every 60 seconds
     app.job_queue.run_repeating(reminder_job, interval=60, first=1)
