@@ -1520,8 +1520,9 @@ async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================================================================
 def run_flask():
     from chapa_server import app as flask_app
-    print("🌐 Flask server starting on port", FLASK_PORT)
-    flask_app.run(host="0.0.0.0", port=FLASK_PORT, use_reloader=False)
+    port = int(os.getenv("PORT", 5000))
+    print(f"🌐 Flask server starting on port {port}")
+    flask_app.run(host="0.0.0.0", port=port, use_reloader=False)
 async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
     now = datetime.now()
     target = now + timedelta(minutes=30)
