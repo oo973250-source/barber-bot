@@ -9,7 +9,7 @@
         :root {
             --bg-overlay: rgba(15, 15, 15, 0.85);
             --card-bg: rgba(30, 30, 30, 0.95);
-            --accent: #FFD700; /* Light Golden/Yellow */
+            --accent: #FFD700;
             --accent-hover: #FFE650;
             --text-main: #FFFFFF;
             --text-muted: #B0B0B0;
@@ -55,7 +55,7 @@
 
         .header h1 {
             color: var(--accent);
-            font-size: 28px;
+            font-size: 32px;
             text-transform: uppercase;
             letter-spacing: 2px;
             margin-bottom: 5px;
@@ -64,10 +64,9 @@
 
         .header p {
             color: var(--text-muted);
-            font-size: 14px;
+            font-size: 16px;
         }
 
-        /* Steps UI */
         .step-indicator {
             display: flex;
             justify-content: center;
@@ -87,7 +86,6 @@
             border-radius: 4px;
         }
 
-        /* Cards & Containers */
         .card {
             background: var(--card-bg);
             border-radius: 16px;
@@ -100,7 +98,7 @@
         }
 
         .section-title {
-            font-size: 18px;
+            font-size: 20px;
             color: var(--accent);
             margin-bottom: 15px;
             display: flex;
@@ -108,15 +106,15 @@
             gap: 8px;
         }
 
-        /* Style List */
+        /* Style List - BIGGER */
         .style-item {
             display: flex;
             align-items: center;
             background: #222;
             border: 2px solid transparent;
             border-radius: 12px;
-            padding: 10px;
-            margin-bottom: 10px;
+            padding: 12px;
+            margin-bottom: 12px;
             cursor: pointer;
             transition: 0.2s;
         }
@@ -124,35 +122,37 @@
             border-color: var(--accent);
             background: rgba(255, 215, 0, 0.1);
         }
-        .style-item img {
-            width: 60px;
-            height: 60px;
-            border-radius: 8px;
+        .style-thumb {
+            width: 90px;
+            height: 90px;
+            border-radius: 10px;
             object-fit: cover;
-            margin-right: 12px;
+            margin-right: 15px;
             background: #111;
+            cursor: zoom-in;
+            border: 1px solid #444;
         }
         .style-info {
             flex: 1;
         }
         .style-name {
             font-weight: bold;
-            font-size: 16px;
+            font-size: 18px;
+            margin-bottom: 4px;
         }
         .style-desc {
-            font-size: 12px;
+            font-size: 14px;
             color: var(--text-muted);
-            margin: 4px 0;
+            margin-bottom: 6px;
         }
         .style-meta {
             display: flex;
             justify-content: space-between;
-            font-size: 13px;
+            font-size: 15px;
         }
         .style-price { color: var(--accent); font-weight: bold; }
         .style-time { color: var(--text-muted); }
 
-        /* Date & Time Grid */
         .grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
@@ -189,10 +189,9 @@
             border-radius: 10px;
             color: #fff;
             margin-bottom: 15px;
-            color-scheme: dark; /* Fixes calendar icon in dark mode */
+            color-scheme: dark;
         }
 
-        /* Buttons */
         .btn {
             width: 100%;
             padding: 16px;
@@ -225,7 +224,6 @@
             color: var(--danger);
         }
 
-        /* Spinner & Loading */
         .spinner-container {
             display: flex;
             flex-direction: column;
@@ -261,6 +259,26 @@
             font-size: 15px;
         }
 
+        /* Image Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.9);
+            justify-content: center;
+            align-items: center;
+        }
+        .modal img {
+            max-width: 95%;
+            max-height: 90vh;
+            border-radius: 10px;
+            border: 2px solid var(--accent);
+        }
+
         .hidden { display: none !important; }
     </style>
 </head>
@@ -278,6 +296,7 @@
             <div class="dot" id="dot4"></div>
         </div>
 
+        <!-- LOADING -->
         <div class="card" id="loadingCard">
             <div class="spinner-container">
                 <div class="spinner"></div>
@@ -342,11 +361,13 @@
         </div>
     </div>
 
+    <!-- Image Modal -->
+    <div id="imgModal" class="modal" onclick="closeModal()">
+        <img id="modalImg" src="">
+    </div>
+
     <script>
-        // ================================================================
-        // CONFIGURATION & STATE
-        // ================================================================
-        const SHOP_NAME = "Elite Cuts"; // Change this to your barber shop name
+        const SHOP_NAME = "Elite Cuts";
         const tg = window.Telegram.WebApp;
         tg.expand();
         tg.setHeaderColor("#0f0f0f");
@@ -364,16 +385,10 @@
             tx_ref: null
         };
 
-        // ================================================================
-        // INITIALIZATION
-        // ================================================================
         async function init() {
             document.getElementById('shopName').innerText = SHOP_NAME;
+            state.chat_id = tg.initDataUnsafe?.user?.id || "123456789";
             
-            // Get Chat ID
-            state.chat_id = tg.initDataUnsafe?.user?.id || "123456789"; // Fallback for local testing
-            
-            // Get Language (1. URL param, 2. Telegram User DB, 3. Default 'en')
             const urlParams = new URLSearchParams(window.location.search);
             let lang = urlParams.get('lang');
             
@@ -382,30 +397,22 @@
                     const res = await fetch(`/api/user-lang?chat_id=${state.chat_id}`);
                     const data = await res.json();
                     lang = data.lang || "en";
-                } catch (e) {
-                    lang = "en";
-                }
+                } catch (e) { lang = "en"; }
             }
             state.lang = lang;
 
-            // Check if returning from Chapa Payment (tx_ref in URL)
             const tx_ref = urlParams.get('tx_ref');
             if (tx_ref) {
                 state.tx_ref = tx_ref;
-                // Restore style data from sessionStorage if available
                 const savedStyle = sessionStorage.getItem('pending_style');
-                if (savedStyle) {
-                    state.selectedStyle = JSON.parse(savedStyle);
-                }
+                if (savedStyle) state.selectedStyle = JSON.parse(savedStyle);
                 showProcessing();
                 pollStatus();
                 return;
             }
 
-            // Load Translations & Styles
             await loadI18n();
             await loadStyles();
-            
             goToStep(1);
         }
 
@@ -414,9 +421,7 @@
                 const res = await fetch(`/api/i18n/${state.lang}`);
                 state.i18n = await res.json();
                 updateTexts();
-            } catch (e) {
-                console.error("Failed to load i18n", e);
-            }
+            } catch (e) { console.error("Failed to load i18n", e); }
         }
 
         function updateTexts() {
@@ -425,21 +430,15 @@
             document.getElementById('wTitle2').innerText = t.w_title || "Choose a Style";
             document.getElementById('wWhen').innerText = t.w_when || "When do you want to come?";
             document.getElementById('wSelectTime').innerText = t.w_select_time || "Select Time";
-            
             document.getElementById('btnToday').innerText = t.w_today || "Today";
             document.getElementById('btnTomorrow').innerText = t.w_tomorrow || "Tomorrow";
             document.getElementById('btnPickDate').innerText = t.w_pick_date || "📆 Pick Date";
-            
             document.getElementById('payBtn').innerText = `💳 ${t.w_pay || "Pay 50 ETB Deposit"}`;
             document.getElementById('testBtn').innerText = `🛠️ ${t.w_test || "Test: Skip Payment"}`;
-            
             document.getElementById('procText').innerText = t.w_verifying || "Verifying Payment…";
             document.getElementById('procSubText').innerText = t.w_verifying_sub || "Waiting for bank confirmation. Please don't close this page.";
         }
 
-        // ================================================================
-        // DATA LOADING
-        // ================================================================
         async function loadStyles() {
             try {
                 const res = await fetch('/api/services');
@@ -454,13 +453,15 @@
         function renderStyles() {
             const list = document.getElementById('stylesList');
             if (state.styles.length === 0) {
-                list.innerHTML = `<p style="text-align:center; color:var(--text-muted);">${state.i18n.w_no_styles || "No styles available yet. The barber is setting things up — check back soon!"}</p>`;
+                list.innerHTML = `<p style="text-align:center; color:var(--text-muted);">${state.i18n.w_no_styles || "No styles available yet."}</p>`;
                 return;
             }
 
             list.innerHTML = state.styles.map(s => `
                 <div class="style-item" onclick="selectStyle(${s.id})" id="style-${s.id}">
-                    ${s.image_url ? `<img src="${s.image_url}" alt="${s.name}">` : `<img src="https://via.placeholder.com/60?text=?" alt="?">`}
+                    ${s.image_url 
+                        ? `<img src="${s.image_url}" class="style-thumb" onclick="event.stopPropagation(); openModal('${s.image_url}')" alt="${s.name}">` 
+                        : `<img src="https://via.placeholder.com/90?text=?" class="style-thumb" alt="?">`}
                     <div class="style-info">
                         <div class="style-name">${s.name}</div>
                         <div class="style-desc">${s.description || ''}</div>
@@ -473,10 +474,16 @@
             `).join('');
         }
 
-        // ================================================================
-        // NAVIGATION & SELECTION
-        // ================================================================
+        function openModal(src) {
+            document.getElementById('modalImg').src = src;
+            document.getElementById('imgModal').style.display = 'flex';
+        }
+        function closeModal() {
+            document.getElementById('imgModal').style.display = 'none';
+        }
+
         function goToStep(step) {
+            document.getElementById('loadingCard').classList.add('hidden');
             for (let i = 1; i <= 4; i++) {
                 document.getElementById(`step${i}`).classList.add('hidden');
                 document.getElementById(`dot${i}`).classList.remove('active');
@@ -493,7 +500,6 @@
             state.selectedStyle = state.styles.find(s => s.id === id);
             document.querySelectorAll('.style-item').forEach(el => el.classList.remove('selected'));
             document.getElementById(`style-${id}`).classList.add('selected');
-            
             setTimeout(() => goToStep(2), 300);
         }
 
@@ -503,26 +509,24 @@
             tomorrow.setDate(tomorrow.getDate() + 1);
 
             document.getElementById('datePicker').min = today.toISOString().split('T')[0];
-            document.getElementById('datePicker').addEventListener('change', (e) => {
+            document.getElementById('datePicker').onchange = (e) => {
                 if (e.target.value) {
                     state.selectedDate = e.target.value;
                     state.dateLabel = new Date(e.target.value).toLocaleDateString(state.lang, { weekday: 'short', month: 'short', day: 'numeric' });
                     loadTimes();
                 }
-            });
+            };
 
             document.getElementById('btnToday').onclick = () => {
                 state.selectedDate = today.toISOString().split('T')[0];
                 state.dateLabel = state.i18n.w_today || "Today";
                 loadTimes();
             };
-            
             document.getElementById('btnTomorrow').onclick = () => {
                 state.selectedDate = tomorrow.toISOString().split('T')[0];
                 state.dateLabel = state.i18n.w_tomorrow || "Tomorrow";
                 loadTimes();
             };
-
             document.getElementById('btnPickDate').onclick = () => {
                 document.getElementById('datePicker').classList.remove('hidden');
                 document.getElementById('datePicker').focus();
@@ -549,16 +553,13 @@
                     return `<div class="grid-item" onclick="selectTime('${t}', '${formatted}')">${formatted}</div>`;
                 }).join('');
 
-            } catch (e) {
-                timeGrid.innerHTML = `<p style="color:red;">Error loading times.</p>`;
-            }
+            } catch (e) { timeGrid.innerHTML = `<p style="color:red;">Error loading times.</p>`; }
         }
 
         function selectTime(timeVal, formattedTime) {
             state.selectedTime = timeVal;
             document.querySelectorAll('#timeGrid .grid-item').forEach(el => el.classList.remove('selected'));
             event.target.classList.add('selected');
-            
             setTimeout(() => goToStep(4), 300);
         }
 
@@ -578,18 +579,13 @@
             return `${formattedHour}:${m} ${ampm}`;
         }
 
-        // ================================================================
-        // PAYMENT FLOW
-        // ================================================================
         async function initiatePayment(isTest) {
             if (!state.selectedStyle || !state.selectedDate || !state.selectedTime) {
                 alert(state.i18n.w_complete || "Please complete all steps above.");
                 return;
             }
 
-            // Save style data to sessionStorage in case page reloads after Chapa redirect
             sessionStorage.setItem('pending_style', JSON.stringify(state.selectedStyle));
-
             showProcessing();
             document.getElementById('procText').innerText = state.i18n.w_connecting || "Connecting to Chapa…";
 
@@ -611,15 +607,12 @@
                 });
 
                 const data = await res.json();
-                
                 if (data.status === "success") {
                     state.tx_ref = data.tx_ref;
-                    
                     if (isTest) {
                         document.getElementById('procText').innerText = state.i18n.w_testing || "Processing test…";
-                        setTimeout(pollStatus, 1500); // Fake delay for test
+                        setTimeout(pollStatus, 1000);
                     } else {
-                        // Redirect to Chapa Checkout
                         window.location.href = data.checkout_url;
                     }
                 } else {
@@ -627,38 +620,34 @@
                 }
             } catch (e) {
                 hideProcessing();
-                alert((state.i18n.w_net_err || "Network error. Check connection and retry.") + "\n" + e.message);
+                alert((state.i18n.w_net_err || "Network error.") + "\n" + e.message);
                 goToStep(4);
             }
         }
 
         async function pollStatus() {
             if (!state.tx_ref) return;
-            
             document.getElementById('procText').innerText = state.i18n.w_verifying || "Verifying Payment…";
             
             let attempts = 0;
-            const maxAttempts = 20; // Poll for ~1 minute
-            
             const interval = setInterval(async () => {
                 attempts++;
                 try {
                     const res = await fetch(`/api/check-status?tx_ref=${state.tx_ref}`);
                     const data = await res.json();
+                    console.log("Polling:", data); // Check console to see status
                     
                     if (data.payment_status === "paid") {
                         clearInterval(interval);
                         sendToBot();
-                    } else if (attempts >= maxAttempts) {
+                    } else if (attempts >= 15) {
                         clearInterval(interval);
                         hideProcessing();
                         alert(state.i18n.w_pay_fail || "Payment failed or timed out. Try again.");
                         goToStep(4);
                     }
-                } catch (e) {
-                    console.error("Polling error", e);
-                }
-            }, 3000); // Check every 3 seconds
+                } catch (e) { console.error("Polling error", e); }
+            }, 1500);
         }
 
         function sendToBot() {
@@ -669,8 +658,23 @@
                 style_desc: state.selectedStyle.description
             };
             
-            // sendData sends data back to the Telegram Bot and closes the app
-            tg.sendData(JSON.stringify(payload));
+            try {
+                tg.sendData(JSON.stringify(payload));
+                // Fallback in case Telegram sendData fails silently
+                setTimeout(() => {
+                    fetch('/api/confirm-booking', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ...payload, chat_id: state.chat_id })
+                    }).then(() => tg.close());
+                }, 1500);
+            } catch (e) {
+                fetch('/api/confirm-booking', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...payload, chat_id: state.chat_id })
+                }).then(() => tg.close());
+            }
         }
 
         function showProcessing() {
@@ -683,7 +687,6 @@
             document.getElementById('processing').classList.add('hidden');
         }
 
-        // Start the app
         init();
     </script>
 </body>
