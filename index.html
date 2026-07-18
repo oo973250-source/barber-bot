@@ -295,6 +295,15 @@
             <div class="dot" id="dot3"></div>
             <div class="dot" id="dot4"></div>
         </div>
+        <!-- ✂️ STICKY STYLE PREVIEW (Shows on Step 2, 3, 4) -->
+        <div class="card hidden" id="previewCard" style="display: flex; align-items: center; padding: 15px; border-color: var(--border); margin-bottom: 15px;">
+            <img id="previewImg" src="" style="width: 80px; height: 80px; border-radius: 12px; object-fit: cover; border: 2px solid var(--accent); margin-right: 15px; cursor: zoom-in;" onclick="openModal(state.selectedStyle.image_url)">
+            <div style="flex: 1;">
+                <div id="previewName" style="font-size: 18px; font-weight: bold; color: var(--accent);"></div>
+                <div id="previewPrice" style="font-size: 15px; color: var(--text-muted); margin-top: 5px;"></div>
+                <div id="previewDesc" style="font-size: 12px; color: var(--text-muted); margin-top: 4px; opacity: 0.8;"></div>
+            </div>
+        </div>
 
         <!-- LOADING -->
         <div class="card" id="loadingCard">
@@ -482,7 +491,7 @@
             document.getElementById('imgModal').style.display = 'none';
         }
 
-        function goToStep(step) {
+            function goToStep(step) {
             document.getElementById('loadingCard').classList.add('hidden');
             for (let i = 1; i <= 4; i++) {
                 document.getElementById(`step${i}`).classList.add('hidden');
@@ -490,6 +499,14 @@
             }
             document.getElementById(`step${step}`).classList.remove('hidden');
             document.getElementById(`dot${step}`).classList.add('active');
+
+            // Show the preview card ONLY if a style is selected and we are past Step 1
+            const previewCard = document.getElementById('previewCard');
+            if (state.selectedStyle && step > 1) {
+                previewCard.classList.remove('hidden');
+            } else {
+                previewCard.classList.add('hidden');
+            }
 
             if (step === 1) loadStyles();
             if (step === 2) initDateButtons();
@@ -500,9 +517,16 @@
             state.selectedStyle = state.styles.find(s => s.id === id);
             document.querySelectorAll('.style-item').forEach(el => el.classList.remove('selected'));
             document.getElementById(`style-${id}`).classList.add('selected');
+            
+            // ✅ Update the sticky preview card
+            document.getElementById('previewImg').src = state.selectedStyle.image_url || 'https://via.placeholder.com/80?text=?';
+            document.getElementById('previewName').innerText = state.selectedStyle.name;
+            document.getElementById('previewPrice').innerText = `${state.selectedStyle.price} ETB | ⏱️ ${state.selectedStyle.est_time || ''}`;
+            document.getElementById('previewDesc').innerText = state.selectedStyle.description || '';
+            
+            // Wait a tiny bit for the animation, then go to step 2
             setTimeout(() => goToStep(2), 300);
         }
-
         function initDateButtons() {
             const today = new Date();
             const tomorrow = new Date(today);
