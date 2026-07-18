@@ -846,17 +846,9 @@ def delete_service(sid: int):
 # ================================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    # Load saved language so the bot doesn't break, but ALWAYS show the picker
     saved_lang = load_lang(chat_id)
     context.user_data["lang"] = saved_lang
-
-    if saved_lang and saved_lang in LANGS:
-        url = f"{WEB_APP_URL}?lang={saved_lang}"
-        kb = [
-            [InlineKeyboardButton(tr("book_btn", saved_lang), web_app=WebAppInfo(url=url))],
-            [InlineKeyboardButton(tr("info_btn", saved_lang), callback_data="menu_info")],
-        ]
-        await update.message.reply_text(tr("main_menu", saved_lang), reply_markup=InlineKeyboardMarkup(kb))
-        return
 
     keys = list(LANGS.keys())
     kb = [
@@ -869,9 +861,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for i in range(0, len(keys), 2)
     ]
     await update.message.reply_text(
-        "Welcome / እንኳን ወደ ባርበር ሾፕ በደህናን መጡ!\n\n",
+        "Welcome / እንኳን ወደ ባርበር ሾፕ በደህናን መጡ!\n\nPlease choose your language:",
         reply_markup=InlineKeyboardMarkup(kb))
-
 
 async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
