@@ -922,16 +922,17 @@ async def _send_final_confirmation(update_msg, bot, pending, phone, lang):
     d_obj = datetime.strptime(appt_date, "%Y-%m-%d")
     t_obj = datetime.strptime(appt_time, "%H:%M")
 
+    # ✅ Customer Confirmation Message (Translated)
     text = (
-        f"✅ *Booking Confirmed, {first_name}!*\n\n"
-        f"💳 *Deposit Paid:* 50 ETB via Chapa\n"
-        f"💶 *Remaining:* {price - 50} ETB (Pay at shop)\n"
-        f"💈 *Service:* {svc}\n"
+        f"✅ *{tr('main_menu', lang).split('!')[0]}, {first_name}!*\n\n"
+        f"{tr('deposit', lang)}\n"
+        f"{tr('remaining', lang, amt=price - 50)}\n"
+        f"💈 *{tr('book_btn', lang).split(' ')[1]}:* {svc}\n"
     )
     if style_desc:
         text += f"📝 *Description:* {style_desc}\n"
     text += (
-        f"\n📞 *Phone:* {phone}\n"
+        f"📞 *{tr('share_phone', lang).split(' ')[1]}:* {phone}\n"
         f"\n📅 *When:* {d_obj.strftime('%a, %b %d')} at {t_obj.strftime('%I:%M %p')}\n\n"
         f"We will see you at the shop!"
     )
@@ -947,6 +948,7 @@ async def _send_final_confirmation(update_msg, bot, pending, phone, lang):
     else:
         await update_msg.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
+    # ✅ Barber Notification Message (Always English for the barber)
     try:
         await bot.send_message(BARBER_ID,
             f"✅ *New Booking*\n\n"
@@ -958,7 +960,6 @@ async def _send_final_confirmation(update_msg, bot, pending, phone, lang):
             parse_mode="Markdown")
     except Exception:
         pass
-
 
 async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
