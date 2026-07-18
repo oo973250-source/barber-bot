@@ -450,7 +450,7 @@
             }
         }
 
-        function renderStyles() {
+                function renderStyles() {
             const list = document.getElementById('stylesList');
             if (state.styles.length === 0) {
                 list.innerHTML = `<p style="text-align:center; color:var(--text-muted);">${state.i18n.w_no_styles || "No styles available yet."}</p>`;
@@ -460,8 +460,8 @@
             list.innerHTML = state.styles.map(s => `
                 <div class="style-item" onclick="selectStyle(${s.id})" id="style-${s.id}">
                     ${s.image_url 
-                        ? `<img src="${s.image_url}" class="style-thumb" onclick="event.stopPropagation(); openModal('${s.image_url}')" alt="${s.name}">` 
-                        : `<img src="https://via.placeholder.com/90?text=?" class="style-thumb" alt="?">`}
+                        ? `<img src="${s.image_url}" class="style-thumb" loading="lazy" onclick="event.stopPropagation(); openModal('${s.image_url}')" alt="${s.name}">` 
+                        : `<img src="https://via.placeholder.com/90?text=?" class="style-thumb" loading="lazy" alt="?">`}
                     <div class="style-info">
                         <div class="style-name">${s.name}</div>
                         <div class="style-desc">${s.description || ''}</div>
