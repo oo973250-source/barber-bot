@@ -1,6 +1,6 @@
 """
-Barber Shop Telegram Bot — Production Build
-Features: 6-language i18n, admin style upload, Chapa payments, waitlist
+Barber Shop Telegram Bot — Production Build (Fixed & Updated)
+Features: 6-language i18n, admin style upload, Chapa payments, waitlist, persistent language & customer memory
 """
 import re
 import os
@@ -152,7 +152,7 @@ L = {
         "main_menu": "እንኳን በደህና መጡ! ዛሬ ምን ላገልግልዎ?",
         "book_btn": "✂️ ዘይቤ ይምረጡ እና ይዘጋጁ",
         "info_btn": "📍 አድራሻ እና የስራ ሰዓት",
-        "info": "📍 *አድራሻ:* አዳማ, ዋና መንገድ\n\n🕒 *የስራ ሰዓት:* ሰኞ-ቅዳሜ: ጠዋት 9:00 – ምሽት 5:00\nእሁድ: ይዘጋል\n\n📞 *ስልክ:* +251 911 234 567",
+        "info": "📍 *አድራሻ:* አዳማ, ዋና መንገድ\n\n🕒 *የስራ ሰዓት:* ሰኞ-ቀዳሜ: ጠዋት 9:00 – ምሽት 5:00\nእሁድ: ይዘጋል\n\n📞 *ስልክ:* +251 911 234 567",
         "back": "🔙 ተመለስ",
         "deposit": "💳 *ቅድሚያ ክፍያ:* 50 ብር ቻፓ በኩል",
         "remaining": "💶 *ቀሪው:* {amt} ብር (በሱቅ ይከፍሉ)",
@@ -634,8 +634,12 @@ def tr(key: str, lang: str = "en", **kw) -> str:
         return text
 
 
-def user_lang(context: ContextTypes.DEFAULT_TYPE) -> str:
-    return context.user_data.get("lang", "en")
+def user_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    lang = context.user_data.get("lang")
+    if not lang:
+        lang = load_lang(update.effective_chat.id)
+        context.user_data["lang"] = lang
+    return lang or "en"
 
 
 # ================================================================
@@ -645,24 +649,44 @@ def init_db():
     conn = sqlite3.connect("barber_shop.db", timeout=10)
     c = conn.cursor()
     c.execute("CREATE TABLE IF NOT EXISTS users (chat_id INTEGER PRIMARY KEY, language TEXT DEFAULT 'en')")
+    
     c.execute("""CREATE TABLE IF NOT EXISTS appointments (
         id INTEGER PRIMARY KEY, chat_id INTEGER, client_name TEXT, phone TEXT, service TEXT, price REAL,
         appointment_date TEXT, appointment_time TEXT, status TEXT DEFAULT 'booked',
-        chapa_tx_ref TEXT UNIQUE, payment_status TEXT DEFAULT 'unpaid', reminded INTEGER DEFAULT 0
-    """)
-    c.execute("CREATE TABLE IF NOT EXISTS waitlist (
+        chapa_tx_ref TEXT UNIQUE, payment_status TEXT DEFAULT 'unpaid', reminded INTEGER DEFAULT 0,
+        confirmed INTEGER DEFAULT 0
+    )""")
+    
+    c.execute("""CREATE TABLE IF NOT EXISTS waitlist (
         id INTEGER PRIMARY KEY, appt_date TEXT, appt_time TEXT, chat_id INTEGER, client_name TEXT,
         phone TEXT, service TEXT, price REAL, status TEXT DEFAULT 'waiting'
     )""")
+    
     c.execute("""CREATE TABLE IF NOT EXISTS services (
         id INTEGER PRIMARY KEY, name TEXT, price REAL, description TEXT, est_time TEXT,
         image_path TEXT, file_id TEXT, is_active INTEGER DEFAULT 1,
-        created_at TEXT DEFAULT (datetime('now','localtime')
-    """)
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+    
     c.execute("""CREATE TABLE IF NOT EXISTS pending_web_data (
         chat_id INTEGER PRIMARY KEY, tx_ref TEXT, image_url TEXT,
         style_name TEXT, style_desc TEXT
     )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS customers (
+        chat_id INTEGER PRIMARY KEY,
+        phone TEXT,
+        name TEXT,
+        language TEXT DEFAULT 'en',
+        created_at TEXT DEFAULT (datetime('now','localtime'))
+    )""")
+
+    # Safe migration for existing databases
+    try:
+        c.execute("ALTER TABLE appointments ADD COLUMN confirmed INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     conn.close()
 
@@ -684,6 +708,22 @@ def load_lang(chat_id: int) -> str:
     return row[0] if row else "en"
 
 
+def upsert_customer(chat_id, phone, name, lang):
+    c = db()
+    c.cursor().execute(
+        "INSERT INTO customers (chat_id, phone, name, language) VALUES (?,?,?,?) "
+        "ON CONFLICT(chat_id) DO UPDATE SET phone=excluded.phone, name=excluded.name, language=excluded.language",
+        (chat_id, phone, name, lang))
+    c.commit(); c.close()
+
+
+def get_customer_phone(chat_id):
+    c = db()
+    row = c.cursor().execute("SELECT phone FROM customers WHERE chat_id=?", (chat_id,)).fetchone()
+    c.close()
+    return row[0] if row else None
+
+
 # ── Appointment helpers ──
 def is_time_taken(date_s: str, time_s: str) -> bool:
     c = db()
@@ -697,7 +737,8 @@ def is_time_taken(date_s: str, time_s: str) -> bool:
 def get_appt(id_: int):
     c = db()
     r = c.cursor().execute(
-        "SELECT id, chat_id, client_name, service, appointment_date, appointment_time, status FROM appointments WHERE id=?", (id_,)).fetchone()
+        "SELECT id, chat_id, client_name, service, appointment_date, appointment_time, status "
+        "FROM appointments WHERE id=?", (id_,)).fetchone()
     c.close()
     return r
 
@@ -804,6 +845,19 @@ def delete_service(sid: int):
 # 4. CUSTOMER HANDLERS
 # ================================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    saved_lang = load_lang(chat_id)
+    context.user_data["lang"] = saved_lang
+
+    if saved_lang and saved_lang in LANGS:
+        url = f"{WEB_APP_URL}?lang={saved_lang}"
+        kb = [
+            [InlineKeyboardButton(tr("book_btn", saved_lang), web_app=WebAppInfo(url=url))],
+            [InlineKeyboardButton(tr("info_btn", saved_lang), callback_data="menu_info")],
+        ]
+        await update.message.reply_text(tr("main_menu", saved_lang), reply_markup=InlineKeyboardMarkup(kb))
+        return
+
     keys = list(LANGS.keys())
     kb = [
         [InlineKeyboardButton(
@@ -830,19 +884,19 @@ async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _show_main_menu(q, lang)
         return
 
-    lang = user_lang(context)
+    lang = user_lang(update, context)
 
     if q.data == "back_to_main":
         await _show_main_menu(q, lang)
     elif q.data == "menu_info":
-        kb = [[InlineKeyboardButton(tr("back", lang), callback_data="back_to_main")]
+        kb = [[InlineKeyboardButton(tr("back", lang), callback_data="back_to_main")]]
         await q.edit_message_text(tr("info", lang), reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
 
 async def _show_main_menu(q, lang: str):
     url = f"{WEB_APP_URL}?lang={lang}"
     kb = [
-        [InlineKeyboardButton(tr("book_btn", lang), web_app=WebAppInfo(url=url)],
+        [InlineKeyboardButton(tr("book_btn", lang), web_app=WebAppInfo(url=url))],
         [InlineKeyboardButton(tr("info_btn", lang), callback_data="menu_info")],
     ]
     await q.edit_message_text(tr("main_menu", lang), reply_markup=InlineKeyboardMarkup(kb))
@@ -852,20 +906,27 @@ async def _show_main_menu(q, lang: str):
 # 5. WEB APP DATA — receives sendData() after payment
 # ================================================================
 async def _send_final_confirmation(update_msg, bot, pending, phone, lang):
+    appt_id = pending["appt_id"]
+    c = db()
+    cur = c.cursor()
+    cur.execute("UPDATE appointments SET confirmed=1, phone=? WHERE id=? AND confirmed=0", (phone, appt_id))
+    if cur.rowcount == 0:
+        cur.execute("DELETE FROM pending_web_data WHERE chat_id=?", (pending["chat_id"],))
+        c.commit(); c.close()
+        return
+
+    cur.execute("DELETE FROM pending_web_data WHERE chat_id=?", (pending["chat_id"],))
+    c.commit(); c.close()
+
+    upsert_customer(pending["chat_id"], phone, pending["first_name"], lang)
+
     first_name = pending["first_name"]
     svc = pending["svc"]
     price = pending["price"]
     appt_date = pending["appt_date"]
-    appt_time = appt_time = pending["appt_time"]
+    appt_time = pending["appt_time"]
     image_url = pending["image_url"]
     style_desc = pending["style_desc"]
-    appt_id = pending["appt_id"]
-
-    c = db()
-    c.cursor().execute("UPDATE appointments SET phone=? WHERE id=?", (phone, appt_id))
-    c.cursor().execute("DELETE FROM pending_web_data WHERE chat_id=?", (pending["chat_id"],))
-    c.commit()
-    c.close()
 
     d_obj = datetime.strptime(appt_date, "%Y-%m-%d")
     t_obj = datetime.strptime(appt_time, "%H:%M")
@@ -934,7 +995,7 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         first_name = update.effective_user.first_name
 
         row = c.cursor().execute(
-            "SELECT payment_status, service, price, appointment_date, appointment_time, id "
+            "SELECT payment_status, service, price, appointment_date, appointment_time, id, confirmed "
             "FROM appointments WHERE chapa_tx_ref=?", (tx_ref,)).fetchone()
 
         if not row:
@@ -944,6 +1005,10 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         if row[0] != "paid":
             await update.message.reply_text(tr("pay_failed", lang))
+            c.close()
+            return
+        
+        if row[6] == 1:
             c.close()
             return
 
@@ -956,10 +1021,7 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             "(chat_id, tx_ref, image_url, style_name, style_desc) VALUES (?,?,?,?,?)",
             (chat_id, tx_ref, image_url, style_name, style_desc))
 
-        phone_row = c.cursor().execute(
-            "SELECT phone FROM appointments WHERE chat_id=? AND phone IS NOT NULL "
-            "AND phone NOT IN ('N/A','Via WebApp') ORDER BY id DESC LIMIT 1", (chat_id,)).fetchone()
-        known_phone = phone_row[0] if phone_row else None
+        known_phone = get_customer_phone(chat_id)
         c.commit()
         c.close()
 
@@ -973,7 +1035,7 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             await _send_final_confirmation(update.message, context.bot, pending_data, known_phone, lang)
         else:
             context.user_data["pending_confirmation"] = pending_data
-            kb = [[KeyboardButton(tr("share_phone", lang), request_contact=True)]
+            kb = [[KeyboardButton(tr("share_phone", lang), request_contact=True)]]
             await update.message.reply_text(
                 tr("phone_ask", lang),
                 reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True, one_time_keyboard=True),
@@ -999,7 +1061,6 @@ async def handle_phone_share(update: Update, context: ContextTypes.DEFAULT_TYPE)
             c.close()
             return
         tx_ref_db = row[0]
-        c.cursor().execute("DELETE FROM pending_web_data WHERE chat_id=?", (chat_id,))
         appt = c.cursor().execute(
             "SELECT id, client_name, service, price, appointment_date, appointment_time FROM appointments WHERE chapa_tx_ref=?", (tx_ref_db,)).fetchone()
         c.close()
@@ -1017,13 +1078,13 @@ async def handle_phone_share(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif update.message.text:
         text = update.message.text.strip().replace(" ", "")
         if not re.match(r'^\+?\d{8,15}$', text):
-            await update.message.reply_text(tr("phone_invalid", user_lang(context)))
+            await update.message.reply_text(tr("phone_invalid", user_lang(update, context)))
             return
         phone = text
     else:
         return
 
-    lang = user_lang(context)
+    lang = user_lang(update, context)
     try:
         await update.message.reply_text(tr("phone_thanks", lang), reply_markup=ReplyKeyboardRemove())
     except:
@@ -1039,10 +1100,13 @@ async def handle_phone_share(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def cust_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    lang = user_lang(context)
+    lang = user_lang(update, context)
     aid = int(q.data.split("_")[2])
     appt = get_appt(aid)
-    if not appt or appt[5] != "booked":
+    
+    # [id, chat_id, client_name, service, appointment_date, appointment_time, status]
+    #   0      1        2          3           4                  5          6
+    if not appt or appt[6] != "booked":
         await q.edit_message_text(tr("not_active", lang))
         return
 
@@ -1103,7 +1167,7 @@ async def _offer_waitlist(ctx: ContextTypes.DEFAULT_TYPE, d: str, t: str):
 async def wl_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    lang = user_lang(context)
+    lang = user_lang(update, context)
     wl_id = int(q.data.split("_")[2])
     wl = get_wl(wl_id)
     if not wl or wl[7] != "offered":
@@ -1121,7 +1185,7 @@ async def wl_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
         c.cursor().execute(
             "INSERT INTO appointments (chat_id, client_name, phone, service, price, "
             "appointment_date, appointment_time, status, payment_status) "
-            "VALUES (?,?,?,? ,?,?,?,?,'booked','paid')",
+            "VALUES (?,?,?,?,?,?,?,?,'booked','paid')",
             (cid, name, phone, svc, price, d, t))
         c.commit()
         c.close()
@@ -1139,7 +1203,7 @@ async def wl_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def late_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    lang = user_lang(context)
+    lang = user_lang(update, context)
     aid = int(q.data.split("_")[3])
     appt = get_appt(aid)
     if not appt:
@@ -1162,15 +1226,15 @@ async def admin_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != BARBER_ID:
         await update.message.reply_text(tr("unauth", "en"))
         return
-    kb = [[InlineKeyboardButton(tr("open_dash", "en")]]
+    kb = [[InlineKeyboardButton(tr("open_dash", "en"))]]
     await update.message.reply_text(tr("admin_on", "en"), reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
 
 
 async def open_dashboard_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id == BARBER_ID and update.message.text == tr("open_dash", "en"):
         kb = [
-            [InlineKeyboardButton(tr("📅 Today's Schedule", callback_data="adm_today")],
-            [InlineKeyboardButton("⏸️ Add Break", callback_data="adm_add_break"),
+            [InlineKeyboardButton("📅 Today's Schedule", callback_data="adm_today")],
+            [InlineKeyboardButton("⏸️ Add Break", callback_data="adm_add_break")],
             [InlineKeyboardButton("▶️ End Break Early", callback_data="adm_end_break")],
             [InlineKeyboardButton("📆 All Upcoming", callback_data="adm_all")],
             [InlineKeyboardButton("💰 View Earnings", callback_data="adm_earn")],
@@ -1179,7 +1243,7 @@ async def open_dashboard_text(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(tr("dashboard", "en"), reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
 
-async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_act(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     d = q.data
@@ -1194,16 +1258,17 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
         for i, a in enumerate(appts, 1):
             aid, name, phone, svc, time_s = a
             t_obj = datetime.strptime(time_s, "%H:%M")
-            txt = (f"*{i}. {t_obj.strftime('%I:%M %p')}*\n👤 {name} | 📞 {phone}\n💈 {svc}\n*(Paid via Chapa)*"
+            txt = f"*{i}. {t_obj.strftime('%I:%M %p')}*\n👤 {name} | 📞 {phone}\n💈 {svc}\n*(Paid via Chapa)*"
             kb = [
                 [InlineKeyboardButton("✅ Done", callback_data=f"adm_done_{aid}"),
                  InlineKeyboardButton("❌ No Show", callback_data=f"adm_noshow_{aid}")]
+            ]
             await context.bot.send_message(q.message.chat_id, txt,
                 reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
         await context.bot.send_message(q.message.chat_id, tr("end_list", "en"),
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(tr("🔙 Back", callback_data="adm_back")]))
+                [InlineKeyboardButton("🔙 Back", callback_data="adm_back")] ]))
 
     elif d == "adm_all":
         appts = get_all_upcoming()
@@ -1215,15 +1280,16 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
             aid, name, phone, svc, date_s, time_s = a
             d_obj = datetime.strptime(date_s, "%Y-%m-%d")
             t_obj = datetime.strptime(time_s, "%H:%M")
-            txt = f"*{i}. {d_obj.strftime('%b %d')} at {t_obj.strftime('%I:%M %p')}\n👤 {name} | 📞 {phone}\n💈 {svc}"
+            txt = f"*{i}. {d_obj.strftime('%b %d')} at {t_obj.strftime('%I:%M %p')}*\n👤 {name} | 📞 {phone}\n💈 {svc}"
             kb = [
                 [InlineKeyboardButton("✅ Done", callback_data=f"adm_done_{aid}"),
                  InlineKeyboardButton("❌ No Show", callback_data=f"adm_noshow_{aid}")]
+            ]
             await context.bot.send_message(q.message.chat_id, txt,
                 reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
         await context.bot.send_message(q.message.chat_id, tr("end_list", "en"),
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(tr("🔙 Back", callback_data="adm_back")]]))
+                [InlineKeyboardButton("🔙 Back", callback_data="adm_back")] ]))
 
     elif d == "adm_done":
         aid = int(d.split("_")[2])
@@ -1241,32 +1307,22 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
                 pass
         await q.edit_message_text(tr("marked_cancel", "en", id=aid))
 
-    elif d == "adm_late_":
-        aid = int(d.split("_")[2])
-        appt = get_appt(aid)
-        if appt:
-            cid, name = appt[1], name = appt[2]
-            kb = [
-                [InlineKeyboardButton(tr("im_coming", "en"), callback_data=f"cust_late_coming_{aid}"),
-                 InlineKeyboardButton(tr("cant_make", "en"), callback_data=f"cust_late_cancel_{aid}")]
-            try:
-                await context.bot.send_message(cid,
-                    tr("late_q", "en", n=name), reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-                await q.answer("Notification sent!", show_alert=True)
-            except:
-                await q.answer("Failed to message.", show_alert=True)
-
     elif d == "adm_add_break":
         kb = [
             [InlineKeyboardButton(datetime.strptime(t, "%H:%M").strftime("%I:%M %p"),
              callback_data=f"brk_s_{t}") for t in WORKING_HOURS]
-        kb.append([InlineKeyboardButton(tr("🔙 Back", callback_data="adm_add_break")])
+        ]
+        kb.append([InlineKeyboardButton("🔙 Back", callback_data="adm_back")])
         await q.edit_message_text(tr("break_start", "en"), reply_markup=InlineKeyboardMarkup(kb))
 
     elif d.startswith("brk_s_"):
         context.user_data["brk_start"] = d.replace("brk_s_", "")
-        await q.edit_message_text(tr("break_end", "en"))
-        await q.answer()
+        kb = [
+            [InlineKeyboardButton(datetime.strptime(t, "%H:%M").strftime("%I:%M %p"),
+             callback_data=f"brk_e_{t}") for t in WORKING_HOURS]
+        ]
+        kb.append([InlineKeyboardButton("🔙 Back", callback_data="adm_add_break")])
+        await q.edit_message_text(tr("break_end", "en"), reply_markup=InlineKeyboardMarkup(kb))
 
     elif d.startswith("brk_e_"):
         end_time = d.replace("brk_e_", "")
@@ -1285,14 +1341,13 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
                 aid, cid, cname = existing
                 c.cursor().execute("UPDATE appointments SET status='cancelled' WHERE id=?", (aid,))
                 try:
-                    await context.bot.send_message(cid,
-                        tr("break_cancel_note", "am", n=cname, t=t))
+                    await context.bot.send_message(cid, tr("break_cancel_note", "en", n=cname, t=t))
                 except:
                     pass
             c.cursor().execute(
                 "INSERT INTO appointments (chat_id, client_name, phone, service, price, "
                 "appointment_date, appointment_time, status, payment_status) "
-                "VALUES (0, 'BREAK', 'N/A', 'Break', 0, ?, ?, 'booked', 'na')", (today, t))
+                "VALUES (0, 'BREAK', 'N/A', 'Break', 0, ?, ?, 'break', 'na')", (today, t))
         c.commit(); c.close()
         await q.edit_message_text(tr("break_added", "en", s=start_time, e=end_time))
 
@@ -1309,19 +1364,20 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
         kb = [
             [InlineKeyboardButton(tr("add_new", "en"), callback_data="adm_add_style")],
             [InlineKeyboardButton(tr("del_style", "en"), callback_data="adm_del_style")],
-            [InlineKeyboardButton(tr("🔙 Back", "en"), callback_data="adm_back")]
-        await q.edit_message_text("🎨 *Style Management*", reply_markup=InlineKeyboardMarkup(kb))
+            [InlineKeyboardButton("🔙 Back", callback_data="adm_back")]
+        ]
+        await q.edit_message_text("🎨 *Style Management*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
     elif d == "adm_del_style":
         services = get_active_services()
         if not services:
             await q.edit_message_text(tr("no_styles", "en"),
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(tr("🔙 Back", "en", callback_data="adm_styles")]]))
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="adm_styles")]]))
             return
         kb = [
             [InlineKeyboardButton(f"🗑️ {s[1]} ({s[2]} ETB)", callback_data=f"del_style_{s[0]}")]
             for s in services]
-        kb.append([InlineKeyboardButton(tr("🔙 Back", "en", callback_data="adm_styles")])
+        kb.append([InlineKeyboardButton("🔙 Back", callback_data="adm_styles")])
         await q.edit_message_text(tr("pick_del", "en"), reply_markup=InlineKeyboardMarkup(kb))
 
     elif d.startswith("del_style_"):
@@ -1332,8 +1388,8 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
 
     elif d == "adm_back":
         kb = [
-            [InlineKeyboardButton(tr("📅 Today's Schedule", callback_data="adm_today")],
-            [InlineKeyboardButton("⏸️ Add Break", callback_data="adm_add_break"),
+            [InlineKeyboardButton("📅 Today's Schedule", callback_data="adm_today")],
+            [InlineKeyboardButton("⏸️ Add Break", callback_data="adm_add_break")],
             [InlineKeyboardButton("▶️ End Break Early", callback_data="adm_end_break")],
             [InlineKeyboardButton("📆 All Upcoming", callback_data="adm_all")],
             [InlineKeyboardButton("💰 View Earnings", callback_data="adm_earn")],
@@ -1341,29 +1397,73 @@ async def handle_admin_actions(update: Update, context: ContextTypes.DEFAULT_TYP
         ]
         await q.edit_message_text("👨‍💻 *Admin Dashboard*", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
-    elif d == "earn_":
+    elif d == "adm_earn":
         kb = [
             [InlineKeyboardButton(tr("p_today", "en"), callback_data="earn_0"),
              InlineKeyboardButton(tr("p_week", "en"), callback_data="earn_7")],
             [InlineKeyboardButton(tr("p_month", "en"), callback_data="earn_30")],
-            [InlineKeyboardButton(tr("🔙 Back", "en"), callback_data="adm_earn")],
+            [InlineKeyboardButton("🔙 Back", callback_data="adm_back")],
         ]
         await q.edit_message_text(tr("pick_period", "en"), reply_markup=InlineKeyboardMarkup(kb))
 
     elif d.startswith("earn_"):
         days = int(d.split("_")[1])
         total, count = get_earnings(days)
-        per = tr("p_today" if days == 0 else tr("p_week" if days == 7 else tr("p_month", "en", days=days))
+        per = tr("p_today", "en") if days == 0 else (tr("p_week", "en") if days == 7 else tr("p_month", "en"))
         await q.edit_message_text(
-            tr("earn_title", "en", p=per),
+            tr("earn_title", "en", p=per) + "\n" + tr("earn_total", "en", a=total) + "\n" + tr("earn_count", "en", c=count),
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(tr("🔙 Back", "en", callback_data="adm_earn")]]),
-            ], parse_mode="Markdown"
+                [InlineKeyboardButton("🔙 Back", callback_data="adm_earn")]]),
+            parse_mode="Markdown"
         )
 
 
 # ================================================================
-# 8. 30-MIN REMINDER JOB
+# 8. CONVERSATION HANDLER STUBS (for adding styles)
+# ================================================================
+async def add_style_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    if update.effective_user.id != BARBER_ID:
+        return
+    await q.message.reply_text(tr("add_style_msg", "en"), parse_mode="Markdown")
+    return ADD_STYLE_PHOTO
+
+async def add_style_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != BARBER_ID:
+        return ConversationHandler.END
+    msg = update.message
+    if not msg.photo or not msg.caption:
+        await msg.reply_text(tr("style_parse_err", "en"), parse_mode="Markdown")
+        return ADD_STYLE_PHOTO
+    
+    try:
+        parts = [p.strip() for p in msg.caption.split("|")]
+        name, price, desc, est_time = parts[0], float(parts[1]), parts[2], parts[3]
+    except Exception:
+        await msg.reply_text(tr("style_parse_err", "en"), parse_mode="Markdown")
+        return ADD_STYLE_PHOTO
+
+    photo_file = await msg.photo[-1].get_file()
+    img_name = f"style_{datetime.now().strftime('%Y%m%d%H%M%S')}.jpg"
+    img_path = UPLOAD_DIR / img_name
+    await photo_file.download_to_drive(str(img_path))
+
+    add_service(name, price, desc, est_time, img_name)
+    await msg.reply_text(tr("style_added", "en", n=name, p=price, d=desc, t=est_time), parse_mode="Markdown")
+    return ConversationHandler.END
+
+async def add_style_wrong(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Please send a photo with a caption.")
+    return ADD_STYLE_PHOTO
+
+async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(tr("cancel_op", "en"))
+    return ConversationHandler.END
+
+
+# ================================================================
+# 9. 30-MIN REMINDER JOB
 # ================================================================
 async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
     now = datetime.now()
@@ -1376,6 +1476,7 @@ async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
         "SELECT id, chat_id, client_name, service, appointment_time "
         "FROM appointments WHERE appointment_date=? AND appointment_time=? "
         "AND status='booked' AND payment_status='paid' AND reminded=0", 
+        (target_date, target_time)
     ).fetchall()
     conn.close()
 
@@ -1389,7 +1490,8 @@ async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
                 f"Your appointment is in 30 minutes!\n\n"
                 f"💈 *Service:* {svc}\n"
                 f"📅 *Time:* {t_obj.strftime('%I:%M %p')}\n\n"
-                f"Please head to the shop now!"
+                f"Please head to the shop now!",
+                parse_mode="Markdown"
             )
             conn2 = db()
             conn2.cursor().execute("UPDATE appointments SET reminded=1 WHERE id=?", (appt_id,))
@@ -1400,7 +1502,7 @@ async def reminder_job(context: ContextTypes.DEFAULT_TYPE):
 
 
 # ================================================================
-# 9. MAIN — SINGLE ENTRY POINT
+# 10. MAIN — SINGLE ENTRY POINT
 # ================================================================
 def run_flask():
     from chapa_server import app as flask_app
