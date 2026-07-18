@@ -280,10 +280,14 @@ def confirm_booking():
         print(f"[API] confirm-booking FAILED: not paid for {ref}")
         return jsonify({"error": "Not paid"}), 400
 
-    # ✅ Idempotency check: If already confirmed or phone is already set, do NOT send another prompt
+    # ✅ Idempotency check
     if row[1] == 1 or (row[2] and row[2] not in ("N/A", "Via WebApp")):
         conn.close()
         return jsonify({"status": "already_handled"})
+
+    # ✅ Fetch user's language
+    lang_row = conn.cursor().execute("SELECT language FROM users WHERE chat_id=?", (chat_id,)).fetchone()
+    lang = lang_row[0] if lang_row else "en"
 
     conn.cursor().execute(
         "INSERT OR REPLACE INTO pending_web_data (chat_id,tx_ref,image_url,style_name,style_desc) VALUES (?,?,?,?,?)",
@@ -291,13 +295,13 @@ def confirm_booking():
     conn.commit()
     conn.close()
 
-    text = (
-        "✅ *Payment confirmed!*\n\n"
-        "Just one last thing — we need your phone number so the barber can reach you if needed.\n\n"
-        "Tap the button below to share it securely (no typing needed):"
-    )
+    # ✅ Use translated text
+    from barber import L, tr
+    text = tr("phone_ask", lang)
+    btn_text = L.get(lang, L["en"]).get("share_phone", "📱 Share Phone Number")
+
     kb = {
-        "keyboard": [[{"text": "📱 Share Phone Number", "request_contact": True}]],
+        "keyboard": [[{"text": btn_text, "request_contact": True}]],
         "resize_keyboard": True,
         "one_time_keyboard": True
     }
@@ -311,7 +315,6 @@ def confirm_booking():
     print(f"[API] confirm-booking sent phone prompt to {chat_id}, status={resp.status_code}")
 
     return jsonify({"status": "success"})
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), use_reloader=False)
