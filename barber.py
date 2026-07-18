@@ -931,7 +931,7 @@ async def _send_final_confirmation(update_msg, bot, pending, phone, lang):
     if style_desc:
         text += f"📝 *Description:* {style_desc}\n"
     text += (
-        f"📞 *Phone:* {phone}\n"
+        f"\n📞 *Phone:* {phone}\n"
         f"\n📅 *When:* {d_obj.strftime('%a, %b %d')} at {t_obj.strftime('%I:%M %p')}\n\n"
         f"We will see you at the shop!"
     )
