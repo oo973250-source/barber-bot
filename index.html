@@ -295,6 +295,7 @@
             <div class="dot" id="dot3"></div>
             <div class="dot" id="dot4"></div>
         </div>
+
         <!-- ✂️ STICKY STYLE PREVIEW (Shows on Step 2, 3, 4) -->
         <div class="card hidden" id="previewCard" style="display: flex; align-items: center; padding: 15px; border-color: var(--border); margin-bottom: 15px;">
             <img id="previewImg" src="" style="width: 80px; height: 80px; border-radius: 12px; object-fit: cover; border: 2px solid var(--accent); margin-right: 15px; cursor: zoom-in;" onclick="openModal(state.selectedStyle.image_url)">
@@ -459,7 +460,7 @@
             }
         }
 
-                function renderStyles() {
+        function renderStyles() {
             const list = document.getElementById('stylesList');
             if (state.styles.length === 0) {
                 list.innerHTML = `<p style="text-align:center; color:var(--text-muted);">${state.i18n.w_no_styles || "No styles available yet."}</p>`;
@@ -491,7 +492,7 @@
             document.getElementById('imgModal').style.display = 'none';
         }
 
-            function goToStep(step) {
+        function goToStep(step) {
             document.getElementById('loadingCard').classList.add('hidden');
             for (let i = 1; i <= 4; i++) {
                 document.getElementById(`step${i}`).classList.add('hidden');
@@ -527,6 +528,7 @@
             // Wait a tiny bit for the animation, then go to step 2
             setTimeout(() => goToStep(2), 300);
         }
+
         function initDateButtons() {
             const today = new Date();
             const tomorrow = new Date(today);
@@ -681,23 +683,24 @@
                 style_name: state.selectedStyle.name,
                 style_desc: state.selectedStyle.description
             };
+            const dataStr = JSON.stringify(payload);
             
             try {
-                tg.sendData(JSON.stringify(payload));
-                // Fallback in case Telegram sendData fails silently
+                tg.sendData(dataStr);
+                // Fallback in case Telegram sendData fails silently or doesn't close the app
                 setTimeout(() => {
                     fetch('/api/confirm-booking', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ ...payload, chat_id: state.chat_id })
-                    }).then(() => tg.close());
-                }, 1500);
+                    }).then(() => tg.close()).catch(() => tg.close());
+                }, 2000);
             } catch (e) {
                 fetch('/api/confirm-booking', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ...payload, chat_id: state.chat_id })
-                }).then(() => tg.close());
+                }).then(() => tg.close()).catch(() => tg.close());
             }
         }
 
