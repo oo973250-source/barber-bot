@@ -897,70 +897,81 @@ async def _show_main_menu(q, lang: str):
 # 5. WEB APP DATA — receives sendData() after payment
 # ================================================================
 async def _send_final_confirmation(update_msg, bot, pending, phone, lang):
-    appt_id = pending["appt_id"]
-    c = db()
-    cur = c.cursor()
-    cur.execute("UPDATE appointments SET confirmed=1, phone=? WHERE id=? AND confirmed=0", (phone, appt_id))
-    if cur.rowcount == 0:
+    try:
+        appt_id = pending["appt_id"]
+        c = db()
+        cur = c.cursor()
+        cur.execute("UPDATE appointments SET confirmed=1, phone=? WHERE id=? AND confirmed=0", (phone, appt_id))
+        if cur.rowcount == 0:
+            cur.execute("DELETE FROM pending_web_data WHERE chat_id=?", (pending["chat_id"],))
+            c.commit(); c.close()
+            return
+
         cur.execute("DELETE FROM pending_web_data WHERE chat_id=?", (pending["chat_id"],))
         c.commit(); c.close()
-        return
 
-    cur.execute("DELETE FROM pending_web_data WHERE chat_id=?", (pending["chat_id"],))
-    c.commit(); c.close()
-
-    upsert_customer(pending["chat_id"], phone, pending["first_name"], lang)
-
-    first_name = pending["first_name"]
-    svc = pending["svc"]
-    price = pending["price"]
-    appt_date = pending["appt_date"]
-    appt_time = pending["appt_time"]
-    image_url = pending["image_url"]
-    style_desc = pending["style_desc"]
-
-    d_obj = datetime.strptime(appt_date, "%Y-%m-%d")
-    t_obj = datetime.strptime(appt_time, "%H:%M")
-
-    # ✅ Customer Confirmation Message (Translated)
-    text = (
-        f"✅ *{tr('main_menu', lang).split('!')[0]}, {first_name}!*\n\n"
-        f"{tr('deposit', lang)}\n"
-        f"{tr('remaining', lang, amt=price - 50)}\n"
-        f"💈 *{tr('book_btn', lang).split(' ')[1]}:* {svc}\n"
-    )
-    if style_desc:
-        text += f"📝 *Description:* {style_desc}\n"
-    text += (
-        f"📞 *{tr('share_phone', lang).split(' ')[1]}:* {phone}\n"
-        f"\n📅 *When:* {d_obj.strftime('%a, %b %d')} at {t_obj.strftime('%I:%M %p')}\n\n"
-        f"We will see you at the shop!"
-    )
-
-    kb = [[InlineKeyboardButton(tr("cancel_btn", lang), callback_data=f"cust_cancel_{appt_id}")]]
-
-    if image_url:
         try:
-            await update_msg.reply_photo(photo=image_url, caption=text,
-                reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-        except Exception:
+            upsert_customer(pending["chat_id"], phone, pending["first_name"], lang)
+        except Exception as e:
+            print(f"Error upserting customer: {e}")
+
+        first_name = pending["first_name"]
+        svc = pending["svc"]
+        price = pending["price"]
+        appt_date = pending["appt_date"]
+        appt_time = pending["appt_time"]
+        image_url = pending["image_url"]
+        style_desc = pending["style_desc"]
+
+        d_obj = datetime.strptime(appt_date, "%Y-%m-%d")
+        t_obj = datetime.strptime(appt_time, "%H:%M")
+
+        # ✅ Safe text generation (Translated)
+        welcome = tr('welcome', lang)
+        deposit = tr('deposit', lang)
+        remaining = tr('remaining', lang, amt=price - 50)
+        
+        text = (
+            f"✅ *{welcome}, {first_name}!*\n\n"
+            f"{deposit}\n"
+            f"{remaining}\n"
+            f"💈 *{tr('w_title', lang)}: {svc}*\n"
+        )
+        if style_desc:
+            text += f"📝 {style_desc}\n"
+        text += (
+            f"📞 {phone}\n"
+            f"📅 {d_obj.strftime('%a, %b %d')} at {t_obj.strftime('%I:%M %p')}\n"
+        )
+
+        kb = [[InlineKeyboardButton(tr("cancel_btn", lang), callback_data=f"cust_cancel_{appt_id}")]]
+
+        if image_url:
+            try:
+                await update_msg.reply_photo(photo=image_url, caption=text,
+                    reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+            except Exception:
+                await update_msg.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        else:
             await update_msg.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-    else:
-        await update_msg.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
 
-    # ✅ Barber Notification Message (Always English for the barber)
-    try:
-        await bot.send_message(BARBER_ID,
-            f"✅ *New Booking*\n\n"
-            f"👤 *Customer:* {first_name}\n"
-            f"💈 *Service:* {svc}\n"
-            f"💰 *Price:* {price} ETB\n"
-            f"📅 *When:* {d_obj.strftime('%a, %b %d')} at {t_obj.strftime('%I:%M %p')}\n"
-            f"📞 *Phone:* {phone}",
-            parse_mode="Markdown")
-    except Exception:
-        pass
+        # Barber Notification (Always English for the barber)
+        try:
+            await bot.send_message(BARBER_ID,
+                f"✅ *New Booking*\n\n"
+                f"👤 *Customer:* {first_name}\n"
+                f"💈 *Service:* {svc}\n"
+                f"💰 *Price:* {price} ETB\n"
+                f"📅 *When:* {d_obj.strftime('%a, %b %d')} at {t_obj.strftime('%I:%M %p')}\n"
+                f"📞 *Phone:* {phone}",
+                parse_mode="Markdown")
+        except Exception:
+            pass
 
+    except Exception as e:
+        print(f"CRITICAL ERROR in _send_final_confirmation: {e}")
+        import traceback
+        traceback.print_exc()
 async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     lang = load_lang(chat_id)
@@ -1041,6 +1052,9 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             pass
 
 
+# ================================================================
+# 5. WEB APP DATA & PHONE SHARE
+# ================================================================
 async def handle_phone_share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pending = context.user_data.get("pending_confirmation")
 
@@ -1084,7 +1098,6 @@ async def handle_phone_share(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     await _send_final_confirmation(update.message, context.bot, pending, phone, lang)
     context.user_data.pop("pending_confirmation", None)
-
 
 # ================================================================
 # 6. CUSTOMER CANCEL & WAITLIST
@@ -1218,11 +1231,15 @@ async def admin_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != BARBER_ID:
         await update.message.reply_text(tr("unauth", "en"))
         return
-    kb = [[InlineKeyboardButton(tr("open_dash", "en"))]]
+    kb = [[KeyboardButton(tr("open_dash", "en"))]]
     await update.message.reply_text(tr("admin_on", "en"), reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
 
-
 async def open_dashboard_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # If user is trying to send a phone number manually, pass it to the phone handler!
+    if context.user_data.get("pending_confirmation"):
+        await handle_phone_share(update, context)
+        return
+        
     if update.effective_user.id == BARBER_ID and update.message.text == tr("open_dash", "en"):
         kb = [
             [InlineKeyboardButton("📅 Today's Schedule", callback_data="adm_today")],
@@ -1233,7 +1250,6 @@ async def open_dashboard_text(update: Update, context: ContextTypes.DEFAULT_TYPE
             [InlineKeyboardButton("🎨 Manage Styles", callback_data="adm_styles")],
         ]
         await update.message.reply_text(tr("dashboard", "en"), reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-
 
 async def admin_act(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
